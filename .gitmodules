@@ -1,0 +1,6 @@
+[submodule "extern/engine"]
+	path = extern/engine
+	url = https://github.com/pkmn/engine
+[submodule "extern/pinyon"]
+	path = extern/pinyon
+	url = https://github.com/baskuit/pinyon
