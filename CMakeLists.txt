@@ -13,3 +13,7 @@ target_link_libraries(main ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpk
 
 add_executable(example ./example.cc)
 target_link_libraries(example ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
+
+add_executable(benchmark ./benchmark.cc)
+target_link_libraries(benchmark pinyon)
+target_link_libraries(benchmark ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
