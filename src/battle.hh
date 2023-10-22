@@ -7,8 +7,10 @@
 
 const int n_bytes_battle = 376;
 
-struct ChanceOptionsAsObs : pkmn_gen1_chance_options {
-    bool operator==(const ChanceOptionsAsObs &other) const {
+struct ChanceOptionsAsObs : pkmn_gen1_chance_options
+{
+    bool operator==(const ChanceOptionsAsObs &other) const
+    {
         return (memcmp(this->actions.bytes, other.actions.bytes, 16) == 0);
     }
 };
@@ -27,14 +29,13 @@ struct BattleTypes : TypeList
     class State : public PerfectInfoState<TypeList>
     {
     public:
-
         pkmn_gen1_battle battle;
         pkmn_gen1_battle_options options;
         pkmn_result result{}; // init so no sporadic panic, probably on first get_actions call
         pkmn_result_kind result_kind;
-        pkmn_gen1_chance_actions *chance_actions;
         pkmn_gen1_calc_options calc_options{};
-        pkmn_rational *p;
+        std::array<uint8_t, 64> log{};
+        pkmn_gen1_log_options log_options;
 
         State(const int row_idx = 0, const int col_idx = 0)
         {
@@ -46,9 +47,8 @@ struct BattleTypes : TypeList
             memset(battle.bytes + 2 * 184, 0, n_bytes_battle - 2 * 184);
             memset(battle.bytes + n_bytes_battle, 0, 8);
             pkmn_rational_init(&this->obs.get().probability);
-            pkmn_gen1_battle_options_set(&options, NULL, &this->obs.get(), NULL);
-            chance_actions = pkmn_gen1_battle_options_chance_actions(&options);
-            p = pkmn_gen1_battle_options_chance_probability(&options);
+            log_options = {log.data(), 64};
+            pkmn_gen1_battle_options_set(&options, &log_options, &this->obs.get(), NULL);
             get_actions();
         }
 
@@ -59,9 +59,8 @@ struct BattleTypes : TypeList
             this->terminal = other.terminal;
             memcpy(battle.bytes, other.battle.bytes, 384);
             pkmn_rational_init(&this->obs.get().probability);
-            pkmn_gen1_battle_options_set(&options, NULL, &this->obs.get(), NULL);
-            chance_actions = pkmn_gen1_battle_options_chance_actions(&options);
-            p = pkmn_gen1_battle_options_chance_probability(&options);
+            log_options = {log.data(), 64};
+            pkmn_gen1_battle_options_set(&options, &log_options, &this->obs.get(), NULL);
             get_actions();
         }
 
@@ -156,10 +155,10 @@ struct BattleTypes : TypeList
             }
             else [[likely]]
             {
-                for (int i = 0; i < PKMN_GEN1_CHANCE_ACTIONS_SIZE; i++)
-                {
-                    stream.push_back(chance_actions->bytes[i]);
-                }
+                // for (int i = 0; i < PKMN_GEN1_CHANCE_ACTIONS_SIZE; i++)
+                // {
+                //     stream.push_back(chance_actions->bytes[i]);
+                // }
                 pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
             }
         }

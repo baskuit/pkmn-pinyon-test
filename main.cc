@@ -1,5 +1,7 @@
 #include "./src/battle.hh"
 
+#include <fstream>
+
 void test1()
 {
     std::vector<uint8_t> s0{}, s1{};
@@ -72,26 +74,125 @@ void move(BattleTypes::State &&state)
     state.apply_actions({0}, {0});
 }
 
-void rollout_print(
+void rollout_pipe(
     BattleTypes::State &state,
-    std::vector<uint8_t> &stream)
+    std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt")
 {
+    remove(path.data());
     BattleTypes::PRNG device{0};
-    while (!state.is_terminal())
+    std::fstream file;
+    file.open(path, std::ios::binary | std::ios::app);
+    // header
+    file << uint8_t{1} << uint8_t{1};
+    file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
+    int i = 0;
+    while (!state.is_terminal() && i < 28)
     {
-        const size_t rows = state.row_actions.size();
-        const size_t cols = state.col_actions.size();
-        const int row_idx = device.random_int(rows);
-        const int col_idx = device.random_int(cols);
+        const int row_idx = device.random_int(state.row_actions.size());
+        const int col_idx = device.random_int(state.col_actions.size());
+        memset(state.log.data(), 0, 64);
         state.apply_actions(
             state.row_actions[row_idx],
-            state.col_actions[col_idx],
-            stream);
+            state.col_actions[col_idx]);
+        // + 1 ensures 0x00 is written
+        const size_t len = strlen(reinterpret_cast<char *>(state.log.data()));
+        std::cout << "len : " << len << std::endl;
+
+        pkmn_result result = state.result;
+        pkmn_choice row_action = state.row_actions[row_idx].get();
+        pkmn_choice col_action = state.col_actions[col_idx].get();
+        char *result_ = reinterpret_cast<char *>(&result);
+        char *row_action_ = reinterpret_cast<char *>(&row_action);
+        char *col_action_ = reinterpret_cast<char *>(&col_action);
+
+        file.write(reinterpret_cast<char *>(state.log.data()), len);
+        char x[1] = {0};
+        file.write(x, 1);
+        file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
+        file.write(result_, 1);
+        file.write(row_action_, 1);
+        file.write(col_action_, 1);
+
+        // after to not overwrite .row_actions, col_actions
         state.get_actions();
+        ++i;
     }
+    file.close();
 }
 
-void test2() {
+void foo()
+{
+    std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
+    std::ifstream file(path, std::ios::binary);
+    file.seekg(0, std::ios::end);
+    std::streampos fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<char> buffer(fileSize);
+    file.read(buffer.data(), fileSize);
+    file.close();
+
+    int i = 0;
+    std::cout << "showdown/gen: " << std::endl;
+    {
+        int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+        std::cout << x << ' ';
+    }
+    {
+        int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+        std::cout << x << ' ';
+    }
+    std::cout << std::endl;
+
+    std::cout << "Battle: " << std::endl;
+    for (int j = 0; j < 384; ++j)
+    {
+        int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+        std::cout << x << ' ';
+    }
+    std::cout << std::endl;
+
+    while (i < buffer.size())
+    {
+        std::cout << "Log: " << std::endl;
+        for (;;)
+        {
+            int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+            std::cout << x << ' ';
+            if (x == 0)
+            {
+                break;
+            }
+        }
+        std::cout << std::endl;
+
+        std::cout << "Battle: " << std::endl;
+        for (int j = 0; j < 384; ++j)
+        {
+            int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+            std::cout << x << ' ';
+        }
+        std::cout << std::endl;
+
+        std::cout << "result/choices: " << std::endl;
+        {
+            int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+            std::cout << x << ' ';
+        }
+        {
+            int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+            std::cout << x << ' ';
+        }
+        {
+            int x = static_cast<int>(static_cast<unsigned char>(buffer[i++]));
+            std::cout << x << ' ';
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "final i: " << i << " vs " << buffer.size() << std::endl;
+}
+
+void test2()
+{
     std::vector<uint8_t> s0{}, s1{};
 
     BattleTypes::PRNG device{};
@@ -99,8 +200,8 @@ void test2() {
     state.randomize_transition(device);
     BattleTypes::State state_{state};
 
-    rollout_print(state, s0);
-    rollout_print(state_, s1);
+    // rollout_print(state, s0);
+    // rollout_print(state_, s1);
 
     int m = s0.size();
     int n = s1.size();
@@ -129,9 +230,17 @@ void test2() {
 
 int main()
 {
-    test2();
+    // test2();
     // move(std::move(state));
-    // BattleTypes::State state{};
+    BattleTypes::State state{};
+    for (int i = 0; i < 384; ++i)
+    {
+        std::cout << (int)state.battle.bytes[i] << " ";
+    }
+    std::cout << std::endl
+              << std::endl;
+    rollout_pipe(state);
+    foo();
     // MonteCarloModel<BattleTypes>::Model model{0};
     // MonteCarloModel<BattleTypes>::ModelOutput output;
     // model.inference(std::move(state), output);
