@@ -7,18 +7,10 @@
 
 const int n_bytes_battle = 376;
 
-struct ChanceOptionsAsObs : pkmn_gen1_chance_options
-{
-    bool operator==(const ChanceOptionsAsObs &other) const
-    {
-        return (memcmp(this->actions.bytes, other.actions.bytes, 16) == 0);
-    }
-};
-
 using TypeList = DefaultTypes<
     float,
     pkmn_choice,
-    ChanceOptionsAsObs,
+    bool,
     float,
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
@@ -34,6 +26,7 @@ struct BattleTypes : TypeList
         pkmn_result result{}; // init so no sporadic panic, probably on first get_actions call
         pkmn_result_kind result_kind;
         pkmn_gen1_calc_options calc_options{};
+        pkmn_gen1_chance_options chance_options{};
         std::array<uint8_t, 64> log{};
         pkmn_gen1_log_options log_options;
 
@@ -46,9 +39,9 @@ struct BattleTypes : TypeList
             memcpy(battle.bytes + 184, col_side, 184);
             memset(battle.bytes + 2 * 184, 0, n_bytes_battle - 2 * 184);
             memset(battle.bytes + n_bytes_battle, 0, 8);
-            pkmn_rational_init(&this->obs.get().probability);
+            pkmn_rational_init(&chance_options.probability);
             log_options = {log.data(), 64};
-            pkmn_gen1_battle_options_set(&options, &log_options, &this->obs.get(), NULL);
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
             get_actions();
         }
 
@@ -58,9 +51,9 @@ struct BattleTypes : TypeList
             this->col_actions = other.col_actions;
             this->terminal = other.terminal;
             memcpy(battle.bytes, other.battle.bytes, 384);
-            pkmn_rational_init(&this->obs.get().probability);
+            pkmn_rational_init(&chance_options.probability);
             log_options = {log.data(), 64};
-            pkmn_gen1_battle_options_set(&options, &log_options, &this->obs.get(), NULL);
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
             get_actions();
         }
 
@@ -116,49 +109,6 @@ struct BattleTypes : TypeList
             }
             else [[likely]]
             {
-                pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
-            }
-        }
-
-        void apply_actions(
-            TypeList::Action row_action,
-            TypeList::Action col_action,
-            std::vector<uint8_t> &stream)
-        {
-            result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
-            result_kind = pkmn_result_type(result);
-            if (result_kind) [[unlikely]]
-            {
-                this->terminal = true;
-                switch (pkmn_result_type(result))
-                {
-                case PKMN_RESULT_WIN:
-                {
-                    this->payoff = TypeList::Value{1.0f};
-                    break;
-                }
-                case PKMN_RESULT_LOSE:
-                {
-                    this->payoff = TypeList::Value{0.0f};
-                    break;
-                }
-                case PKMN_RESULT_TIE:
-                {
-                    this->payoff = TypeList::Value{0.5f};
-                    break;
-                }
-                case PKMN_RESULT_ERROR:
-                {
-                    exit(1);
-                }
-                }
-            }
-            else [[likely]]
-            {
-                // for (int i = 0; i < PKMN_GEN1_CHANCE_ACTIONS_SIZE; i++)
-                // {
-                //     stream.push_back(chance_actions->bytes[i]);
-                // }
                 pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
             }
         }

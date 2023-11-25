@@ -2,116 +2,7 @@
 
 #include <fstream>
 
-void test1()
-{
-    std::vector<uint8_t> s0{}, s1{};
-
-    BattleTypes::PRNG device{};
-    BattleTypes::State state{};
-    state.randomize_transition(device);
-    BattleTypes::State state_{state};
-
-    uint64_t d_seed = device.uniform_64();
-    BattleTypes::PRNG d0{d_seed}, d1{d_seed};
-    size_t turn = 0;
-    while (!state.is_terminal())
-    {
-        {
-            const size_t rows = state.row_actions.size();
-            const size_t cols = state.col_actions.size();
-            const int row_idx = d0.random_int(rows);
-            const int col_idx = d0.random_int(cols);
-            state.apply_actions(
-                state.row_actions[row_idx],
-                state.col_actions[col_idx],
-                s0);
-            state.get_actions();
-        };
-        {
-            const size_t rows = state_.row_actions.size();
-            const size_t cols = state_.col_actions.size();
-            const int row_idx = d1.random_int(rows);
-            const int col_idx = d1.random_int(cols);
-            state_.apply_actions(
-                state_.row_actions[row_idx],
-                state_.col_actions[col_idx],
-                s1);
-            state_.get_actions();
-        };
-
-        if (memcmp(state.battle.bytes, state_.battle.bytes, 1))
-        {
-            std::cout << "battle bytes mismatch: " << turn << std::endl;
-        }
-        ++turn;
-    }
-
-    int m = s0.size();
-    int n = s1.size();
-    int z = std::min(m, n);
-    std::cout << m << ' ' << n << ' ' << z << std::endl;
-    for (int i = 0; i < z; ++i)
-    {
-        if (s0[i] != s1[i])
-        {
-            std::cout << i << ' ' << i % 8 << ", "
-                      << (int)s0[i] << '/' << (int)s1[i] << std::endl;
-        }
-    }
-
-    volatile uint32_t endian = 0x01234567;
-    uint16_t turns0 = (*((uint8_t *)(&endian))) == 0x67
-                          ? state.battle.bytes[368] | state.battle.bytes[369] << 8
-                          : state.battle.bytes[368] << 8 | state.battle.bytes[369];
-    uint16_t turns1 = (*((uint8_t *)(&endian))) == 0x67
-                          ? state_.battle.bytes[368] | state_.battle.bytes[369] << 8
-                          : state_.battle.bytes[368] << 8 | state_.battle.bytes[369];
-    std::cout << "turns: " << (int)turns0 << ' ' << (int)turns1 << std::endl;
-}
-
-void move(BattleTypes::State &&state)
-{
-    state.apply_actions({0}, {0});
-}
-
-void test2()
-{
-    std::vector<uint8_t> s0{}, s1{};
-
-    BattleTypes::PRNG device{};
-    BattleTypes::State state{};
-    state.randomize_transition(device);
-    BattleTypes::State state_{state};
-
-    // rollout_print(state, s0);
-    // rollout_print(state_, s1);
-
-    int m = s0.size();
-    int n = s1.size();
-    int z = std::min(m, n);
-    std::cout << m << '!' << n << '!' << z << std::endl;
-    for (int i = 0; i < z; ++i)
-    {
-        if (s0[i] != s1[i])
-        {
-            std::cout << i << ' ' << i % 8 << ", ";
-            std::cout << (int)s0[i] << '/' << (int)s1[i] << std::endl;
-            // break
-        }
-        // std::cout << (int)t0[i] << ", ";
-    }
-
-    volatile uint32_t endian = 0x01234567;
-    uint16_t turns0 = (*((uint8_t *)(&endian))) == 0x67
-                          ? state.battle.bytes[368] | state.battle.bytes[369] << 8
-                          : state.battle.bytes[368] << 8 | state.battle.bytes[369];
-    uint16_t turns1 = (*((uint8_t *)(&endian))) == 0x67
-                          ? state_.battle.bytes[368] | state_.battle.bytes[369] << 8
-                          : state_.battle.bytes[368] << 8 | state_.battle.bytes[369];
-    std::cout << "turns: " << (int)turns0 << ' ' << (int)turns1 << std::endl;
-}
-
-void rollout_pipe(
+void rollout_write(
     BattleTypes::State &state,
     int n_frames,
     std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt")
@@ -120,20 +11,21 @@ void rollout_pipe(
     BattleTypes::PRNG device{0};
     std::fstream file;
     file.open(path, std::ios::binary | std::ios::app);
+
     // header
-    file << uint8_t{1} << uint8_t{1};
+    file << uint8_t{1} << uint8_t{1} << uint8_t{0} << uint8_t{64};
     file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
-    int i = 0;
-    while (!state.is_terminal() && i < n_frames)
+
+    for (int frame = 0; frame < n_frames && !state.is_terminal(); ++frame)
     {
         const int row_idx = device.random_int(state.row_actions.size());
         const int col_idx = device.random_int(state.col_actions.size());
+        // zero out log data. Is this a good idea?
         memset(state.log.data(), 0, 64);
         state.apply_actions(
             state.row_actions[row_idx],
             state.col_actions[col_idx]);
-        // + 1 ensures 0x00 is written
-        const size_t len = strlen(reinterpret_cast<char *>(state.log.data()));
+
         pkmn_result result = state.result;
         pkmn_choice row_action = state.row_actions[row_idx].get();
         pkmn_choice col_action = state.col_actions[col_idx].get();
@@ -141,9 +33,10 @@ void rollout_pipe(
         char *row_action_ = reinterpret_cast<char *>(&row_action);
         char *col_action_ = reinterpret_cast<char *>(&col_action);
 
+        const size_t len = 64;
         file.write(reinterpret_cast<char *>(state.log.data()), len);
-        char x[1] = {0};
-        file.write(x, 1);
+        // char x[1] = {0};
+        // file.write(x, 1);
         file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
         file.write(result_, 1);
         file.write(row_action_, 1);
@@ -151,12 +44,20 @@ void rollout_pipe(
 
         // after to not overwrite .row_actions, col_actions
         state.get_actions();
-        ++i;
+        ++frame;
     }
     file.close();
 }
 
-void foo()
+void fix(int &x)
+{
+    // while (x < 0)
+    // {
+    //     x += 256;
+    // }
+}
+
+void read()
 {
     std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
     std::ifstream file(path, std::ios::binary);
@@ -170,13 +71,25 @@ void foo()
     using T = char;
 
     int i = 0;
-    std::cout << "showdown/gen: " << std::endl;
+    std::cout << "showdown/gen/log: " << std::endl;
     {
         int x = static_cast<int>(static_cast<T>(buffer[i++]));
+        fix(x);
         std::cout << x << ' ';
     }
     {
         int x = static_cast<int>(static_cast<T>(buffer[i++]));
+        fix(x);
+        std::cout << x << ' ';
+    }
+    {
+        int x = static_cast<int>(static_cast<T>(buffer[i++]));
+        fix(x);
+        std::cout << x << ' ';
+    }
+    {
+        int x = static_cast<int>(static_cast<T>(buffer[i++]));
+        fix(x);
         std::cout << x << ' ';
     }
     std::cout << std::endl;
@@ -192,14 +105,11 @@ void foo()
     while (i < buffer.size())
     {
         std::cout << "Log: " << std::endl;
-        for (;;)
+        for (int j = 0; j < 64; ++j)
         {
             int x = static_cast<int>(static_cast<T>(buffer[i++]));
+            fix(x);
             std::cout << x << ' ';
-            if (x == 0)
-            {
-                break;
-            }
         }
         std::cout << std::endl;
 
@@ -207,6 +117,7 @@ void foo()
         for (int j = 0; j < 384; ++j)
         {
             int x = static_cast<int>(static_cast<T>(buffer[i++]));
+            fix(x);
             std::cout << x << ' ';
         }
         std::cout << std::endl;
@@ -214,14 +125,17 @@ void foo()
         std::cout << "result/choices: " << std::endl;
         {
             int x = static_cast<int>(static_cast<T>(buffer[i++]));
+            fix(x);
             std::cout << x << ' ';
         }
         {
             int x = static_cast<int>(static_cast<T>(buffer[i++]));
+            fix(x);
             std::cout << x << ' ';
         }
         {
             int x = static_cast<int>(static_cast<T>(buffer[i++]));
+            fix(x);
             std::cout << x << ' ';
         }
         std::cout << std::endl;
@@ -233,9 +147,6 @@ int main(int argc, char **argv)
 {
     int number = std::atoi(argv[1]);
     BattleTypes::State state{};
-    rollout_pipe(state, number);
-    foo();
-    // MonteCarloModel<BattleTypes>::Model model{0};
-    // MonteCarloModel<BattleTypes>::ModelOutput output;
-    // model.inference(std::move(state), output);
+    rollout_write(state, number);
+    read();
 }
