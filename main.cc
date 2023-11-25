@@ -13,7 +13,7 @@ void rollout_write(
     file.open(path, std::ios::binary | std::ios::app);
 
     // header
-    file << uint8_t{1} << uint8_t{1} << uint8_t{0} << uint8_t{64};
+    file << uint8_t{1} << uint8_t{1} << uint8_t{64} << uint8_t{0};
     file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
 
     for (int frame = 0; frame < n_frames && !state.is_terminal(); ++frame)
@@ -49,14 +49,6 @@ void rollout_write(
     file.close();
 }
 
-void fix(int &x)
-{
-    // while (x < 0)
-    // {
-    //     x += 256;
-    // }
-}
-
 void read()
 {
     std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
@@ -68,28 +60,28 @@ void read()
     file.read(buffer.data(), fileSize);
     file.close();
 
-    using T = char;
+    using T = uint8_t;
 
     int i = 0;
     std::cout << "showdown/gen/log: " << std::endl;
     {
-        int x = static_cast<int>(static_cast<T>(buffer[i++]));
-        fix(x);
+        int x = static_cast<T>(buffer[i++]);
+
         std::cout << x << ' ';
     }
     {
-        int x = static_cast<int>(static_cast<T>(buffer[i++]));
-        fix(x);
+        int x = static_cast<T>(buffer[i++]);
+
         std::cout << x << ' ';
     }
     {
-        int x = static_cast<int>(static_cast<T>(buffer[i++]));
-        fix(x);
+        int x = static_cast<T>(buffer[i++]);
+
         std::cout << x << ' ';
     }
     {
-        int x = static_cast<int>(static_cast<T>(buffer[i++]));
-        fix(x);
+        int x = static_cast<T>(buffer[i++]);
+
         std::cout << x << ' ';
     }
     std::cout << std::endl;
@@ -97,7 +89,7 @@ void read()
     std::cout << "Battle: " << std::endl;
     for (int j = 0; j < 384; ++j)
     {
-        int x = static_cast<int>(static_cast<T>(buffer[i++]));
+        int x = static_cast<T>(buffer[i++]);
         std::cout << x << ' ';
     }
     std::cout << std::endl;
@@ -107,8 +99,8 @@ void read()
         std::cout << "Log: " << std::endl;
         for (int j = 0; j < 64; ++j)
         {
-            int x = static_cast<int>(static_cast<T>(buffer[i++]));
-            fix(x);
+            int x = static_cast<T>(buffer[i++]);
+
             std::cout << x << ' ';
         }
         std::cout << std::endl;
@@ -116,26 +108,26 @@ void read()
         std::cout << "Battle: " << std::endl;
         for (int j = 0; j < 384; ++j)
         {
-            int x = static_cast<int>(static_cast<T>(buffer[i++]));
-            fix(x);
+            int x = static_cast<T>(buffer[i++]);
+
             std::cout << x << ' ';
         }
         std::cout << std::endl;
 
         std::cout << "result/choices: " << std::endl;
         {
-            int x = static_cast<int>(static_cast<T>(buffer[i++]));
-            fix(x);
+            int x = static_cast<T>(buffer[i++]);
+
             std::cout << x << ' ';
         }
         {
-            int x = static_cast<int>(static_cast<T>(buffer[i++]));
-            fix(x);
+            int x = static_cast<T>(buffer[i++]);
+
             std::cout << x << ' ';
         }
         {
-            int x = static_cast<int>(static_cast<T>(buffer[i++]));
-            fix(x);
+            int x = static_cast<T>(buffer[i++]);
+
             std::cout << x << ' ';
         }
         std::cout << std::endl;
