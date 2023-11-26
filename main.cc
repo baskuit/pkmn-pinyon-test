@@ -56,21 +56,56 @@ void count_branches(
     counts.print();
 }
 
+void play_good_game_lol(
+    const BattleTypes::State &state_)
+{
+    using Types = TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>;
+    Types::PRNG device{0};
+    Types::State state{state_};
+    state.print_log = true;
+    Types::Model model{0};
+    Types::Search search{};
+    while (!state.is_terminal())
+    {
+        Types::MatrixNode root{};
+        search.run_for_iterations(1000000, device, state, model, root);
+        Types::VectorReal r, c;
+        search.get_empirical_strategies(root.stats, r, c);
+
+        const int row_idx = device.sample_pdf(r);
+        const int col_idx = device.sample_pdf(c);
+        state.apply_actions(
+            state.row_actions[row_idx],
+            state.col_actions[col_idx]);
+        // after to not overwrite .row_actions, col_actions
+        state.get_actions();
+    }
+}
+
 int main(int argc, char **argv)
 {
     BattleTypes::State state{};
-    
-    using Types = TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>;
-    Types::Model model{0};
-    Types::PRNG device{2};
-    Types::Search search{};
-    Types::MatrixNode root{};
-    search.run_for_iterations(10000, device, state, model, root);
-    size_t count = root.count_matrix_nodes();
-    std::cout << "count: " << count << std::endl;
+    state.print_log = true;
+    state.get_actions();
+    state.apply_actions(state.row_actions[0], state.col_actions[0]);
+    state.get_actions();
 
-    // state.apply_actions(state.row_actions[0], state.col_actions[0]);
-    // state.get_actions();
+    play_good_game_lol(state);
+
+    // using Types = TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>;
+    // Types::Model model{0};
+    // Types::PRNG device{2};
+    // Types::Search search{};
+    // Types::MatrixNode root{};
+    // search.run_for_iterations(1000000, device, state, model, root);
+    // size_t count = root.count_matrix_nodes();
+    // std::cout << "count: " << count << std::endl;
+
+    // Types::VectorReal r, c;
+    // search.get_empirical_strategies(root.stats, r, c);
+
+    // math::print(r);
+    // math::print(c);
 
     // count_branches(state);
 }

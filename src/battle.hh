@@ -9,18 +9,10 @@
 
 const int n_bytes_battle = 376;
 
-struct ChanceActionsAsObs : pkmn_gen1_chance_actions
-{
-    bool operator==(const ChanceActionsAsObs &other) const
-    {
-        return (memcmp(this->bytes, other.bytes, 16) == 0);
-    }
-};
-
 using TypeList = DefaultTypes<
     float,
     pkmn_choice,
-    ChanceActionsAsObs,
+    std::array<uint8_t, 16>,
     float,
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
@@ -89,7 +81,7 @@ struct BattleTypes : TypeList
                 calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
             }
             pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, &calc_options);
-            get_actions();
+            // get_actions();
         }
 
         void get_actions()
@@ -114,7 +106,10 @@ struct BattleTypes : TypeList
             TypeList::Action row_action,
             TypeList::Action col_action)
         {
-            std::cout << "last actions" << (int)row_action.get() << ' ' << (int)col_action.get() << std::endl;
+            // if (print_log)
+            // {
+            //     std::cout << "last actions " << (int)row_action.get() << ' ' << (int)col_action.get() << std::endl;
+            // }
 
             result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
             result_kind = pkmn_result_type(result);
@@ -151,11 +146,15 @@ struct BattleTypes : TypeList
                     calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
                     calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
                 }
-                pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
+                // memcpy(
+                //     this->obs.get().data(),
+                //     log.data(),
+                //     64);
                 memcpy(
-                    this->obs.get().bytes,
+                    this->obs.get().data(),
                     pkmn_gen1_battle_options_chance_actions(&options)->bytes,
                     16);
+                pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
             }
 
             for (int i = 0; i < 64; ++i)
