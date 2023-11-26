@@ -7,10 +7,18 @@
 
 const int n_bytes_battle = 376;
 
+struct ChanceActionsAsObs : pkmn_gen1_chance_actions
+{
+    bool operator==(const ChanceActionsAsObs &other) const
+    {
+        return (memcmp(this->bytes, other.bytes, 16) == 0);
+    }
+};
+
 using TypeList = DefaultTypes<
     float,
     pkmn_choice,
-    bool,
+    ChanceActionsAsObs,
     float,
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
@@ -29,6 +37,7 @@ struct BattleTypes : TypeList
         pkmn_gen1_chance_options chance_options{};
         std::array<uint8_t, 64> log{};
         pkmn_gen1_log_options log_options;
+        bool clamp = true;
 
         State(const int row_idx = 0, const int col_idx = 0)
         {
@@ -41,7 +50,12 @@ struct BattleTypes : TypeList
             memset(battle.bytes + n_bytes_battle, 0, 8);
             pkmn_rational_init(&chance_options.probability);
             log_options = {log.data(), 64};
-            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
+            if (clamp)
+            {
+                calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
+                calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
+            }
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, &calc_options);
             get_actions();
         }
 
@@ -53,7 +67,12 @@ struct BattleTypes : TypeList
             memcpy(battle.bytes, other.battle.bytes, 384);
             pkmn_rational_init(&chance_options.probability);
             log_options = {log.data(), 64};
-            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
+            if (clamp)
+            {
+                calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
+                calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
+            }
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, &calc_options);
             get_actions();
         }
 
@@ -109,8 +128,20 @@ struct BattleTypes : TypeList
             }
             else [[likely]]
             {
+                if (clamp)
+                {
+                    calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
+                    calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
+                }
                 pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
+                auto *ptr = pkmn_gen1_battle_options_chance_actions(&options);
+                memcpy(this->obs.get().bytes, ptr->bytes, 16);
             }
+        }
+
+        const Obs &get_obs() const
+        {
+            return this->obs;
         }
 
         void randomize_transition(TypeList::PRNG &device)
