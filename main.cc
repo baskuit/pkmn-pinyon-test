@@ -1,57 +1,5 @@
 #include "./src/battle.hh"
 
-#include <fstream>
-
-void rollout_write(
-    BattleTypes::State &state,
-    std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt")
-{
-    remove(path.data());
-    BattleTypes::PRNG device{};
-    std::fstream file;
-    file.open(path, std::ios::binary | std::ios::app);
-
-    // header
-    file << uint8_t{1} << uint8_t{1} << uint8_t{64} << uint8_t{0};
-    file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
-
-    for (int frame = 0; !state.is_terminal(); ++frame)
-    {
-        const int row_idx = device.random_int(state.row_actions.size());
-        const int col_idx = device.random_int(state.col_actions.size());
-
-        state.apply_actions(
-            state.row_actions[row_idx],
-            state.col_actions[col_idx]);
-
-        pkmn_result result = state.result;
-        pkmn_choice row_action = state.row_actions[row_idx].get();
-        pkmn_choice col_action = state.col_actions[col_idx].get();
-        char *result_ = reinterpret_cast<char *>(&result);
-        char *row_action_ = reinterpret_cast<char *>(&row_action);
-        char *col_action_ = reinterpret_cast<char *>(&col_action);
-
-        const size_t len = 64;
-        file.write(reinterpret_cast<char *>(state.log.data()), len);
-        file.write(reinterpret_cast<char *>(state.battle.bytes), 384);
-        file.write(result_, 1);
-        file.write(row_action_, 1);
-        file.write(col_action_, 1);
-
-        // after to not overwrite .row_actions, col_actions
-        state.get_actions();
-        ++frame;
-
-        // print obs
-        // for (int j = 0; j < 16; ++j)
-        // {
-        //     std::cout << (int)state.obs.get().bytes[j] << ' ';
-        // }
-        // std::cout << std::endl;
-    }
-    file.close();
-}
-
 struct ArrayHash
 {
     template <typename T, std::size_t N>
@@ -97,7 +45,7 @@ void count_branches(
 
                 std::array<uint8_t, 376> fast;
                 memcpy(fast.data(), state_.battle.bytes, 376);
-                int& count = hash_map[fast];
+                int &count = hash_map[fast];
                 ++count;
             }
 
@@ -111,11 +59,7 @@ void count_branches(
 int main(int argc, char **argv)
 {
     BattleTypes::State state{};
-
     
-    // auto state_ = state;
-    // rollout_write(state_);
-
     using Types = TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>;
     Types::Model model{0};
     Types::PRNG device{2};
