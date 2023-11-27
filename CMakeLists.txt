@@ -7,13 +7,16 @@ target_include_directories(pinyon INTERFACE extern/pinyon/src)
 
 include_directories(extern/engine/zig-out/include)
 
+set(libpkmn ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
+set(libpkmn-debug ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown-debug.a)
+
 add_executable(main ./main.cc)
 target_link_libraries(main pinyon)
-target_link_libraries(main ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
+target_link_libraries(main ${libpkmn})
 
 add_executable(example ./example.cc)
-target_link_libraries(example ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
+target_link_libraries(example ${libpkmn})
 
 add_executable(benchmark ./benchmark.cc)
 target_link_libraries(benchmark pinyon)
-target_link_libraries(benchmark ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdown.a)
+target_link_libraries(benchmark ${libpkmn})
