@@ -10,7 +10,7 @@
 using TypeList = DefaultTypes<
     float,
     pkmn_choice,
-    std::array<uint8_t, 376>,
+    std::array<uint8_t, 16>,
     float,
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
@@ -44,14 +44,9 @@ struct BattleTypes : TypeList
             memcpy(battle.bytes + 184, col_side, 184);
             memset(battle.bytes + 2 * 184, 0, n_bytes_battle - 2 * 184);
             memset(battle.bytes + n_bytes_battle, 0, 8);
-            // pkmn_rational_init(&chance_options.probability);
-            // log_options = {log.data(), 64};
-            // if (clamp)
-            // {
-            //     calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
-            //     calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
-            // }
-            pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
+            pkmn_rational_init(&chance_options.probability);
+            log_options = {log.data(), 64};
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, &calc_options);
             get_actions();
 
             // setup debug log. this part probably uses the wrong seed since its called before randomize_transition
@@ -70,9 +65,12 @@ struct BattleTypes : TypeList
             this->row_actions = other.row_actions;
             this->col_actions = other.col_actions;
             this->terminal = other.terminal;
+            result = other.result;
             memcpy(battle.bytes, other.battle.bytes, 384);
+            options = other.options;
+            // chance_options = pkmn_gen1_chance_options{};
             // pkmn_rational_init(&chance_options.probability);
-            // log_options = {log.data(), 64};
+            log_options = {log.data(), 64};
             // clamp = other.clamp;
             // debug_log = other.debug_log;
             // if (clamp)
@@ -80,8 +78,29 @@ struct BattleTypes : TypeList
             //     calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
             //     calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
             // }
-            pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
-            // get_actions();
+            pkmn_gen1_battle_options_set(&options, &log_options, NULL, NULL);
+            // debug_log = other.debug_log;
+        }
+
+        State(const std::array<uint8_t, 384> &x)
+        {
+            memcpy(battle.bytes, x.data(), 384);
+            result = pkmn_result{80};
+
+            options = pkmn_gen1_battle_options{};
+            log_options = {log.data(), 64};
+            chance_options = pkmn_gen1_chance_options{};
+            pkmn_rational_init(&chance_options.probability);
+            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
+
+            // debug_log.push_back(uint8_t{1});
+            // debug_log.push_back(uint8_t{1});
+            // debug_log.push_back(uint8_t{64});
+            // debug_log.push_back(uint8_t{0});
+            // for (int i = 0; i < 384; ++i)
+            // {
+            //     debug_log.push_back(battle.bytes[i]);
+            // }
         }
 
         void get_actions()
@@ -126,10 +145,12 @@ struct BattleTypes : TypeList
             TypeList::Action row_action,
             TypeList::Action col_action)
         {
-            // if (print_log)
-            // {
-            //     std::cout << "last actions " << (int)row_action.get() << ' ' << (int)col_action.get() << std::endl;
-            // }
+            if (clamp)
+            {
+                calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
+                calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
+            }
+            pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
 
             result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
             result_kind = pkmn_result_type(result);
@@ -161,28 +182,15 @@ struct BattleTypes : TypeList
             }
             else [[likely]]
             {
-                // if (clamp)
-                // {
-                //     calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
-                //     calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
-                // }
-                // memcpy(
-                //     this->obs.get().data(),
-                //     log.data(),
-                //     64);
-                // memcpy(
-                //     this->obs.get().data(),
-                //     pkmn_gen1_battle_options_chance_actions(&options)->bytes,
-                //     16);
+                auto p = pkmn_gen1_battle_options_chance_probability(&options);
+                this->prob = typename TypeList::Prob{static_cast<float>(
+                    pkmn_rational_numerator(p) / pkmn_rational_denominator(p))};
                 memcpy(
                     this->obs.get().data(),
-                    battle.bytes,
-                    376);
-                pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
-            }
+                    pkmn_gen1_battle_options_chance_actions(&options)->bytes,
+                    16);
+                        }
 
-            // if (print_log)
-            // {
             // for (int i = 0; i < 64; ++i)
             // {
             //     debug_log.push_back(log[i]);
@@ -194,15 +202,6 @@ struct BattleTypes : TypeList
             // debug_log.push_back(result);
             // debug_log.push_back(static_cast<uint8_t>(row_action));
             // debug_log.push_back(static_cast<uint8_t>(col_action));
-
-            // std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
-            // remove(path.data());
-            // std::fstream file;
-            // file.open(path, std::ios::binary | std::ios::app);
-            // const size_t n = debug_log.size();
-            // file.write(reinterpret_cast<char *>(debug_log.data()), n);
-            // file.close();
-            // }
         }
 
         const Obs &get_obs() const
