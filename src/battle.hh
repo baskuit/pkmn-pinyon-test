@@ -211,6 +211,12 @@ struct BattleTypes : TypeList
             *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = device.uniform_64();
         }
 
+        void randomize_transition(TypeList::Seed seed)
+        {
+            uint8_t *battle_prng_bytes = battle.bytes + n_bytes_battle;
+            *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = seed;
+        }
+
         void save(std::filesystem::path path)
         {
             std::fstream file;
