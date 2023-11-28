@@ -6,6 +6,7 @@
 #include "./sides.hh"
 
 #include <fstream>
+#include <filesystem>
 
 using TypeList = DefaultTypes<
     float,
@@ -50,14 +51,14 @@ struct BattleTypes : TypeList
             get_actions();
 
             // setup debug log. this part probably uses the wrong seed since its called before randomize_transition
-            // debug_log.push_back(uint8_t{1});
-            // debug_log.push_back(uint8_t{1});
-            // debug_log.push_back(uint8_t{64});
-            // debug_log.push_back(uint8_t{0});
-            // for (int i = 0; i < 384; ++i)
-            // {
-            //     debug_log.push_back(battle.bytes[i]);
-            // }
+            debug_log.push_back(uint8_t{1});
+            debug_log.push_back(uint8_t{1});
+            debug_log.push_back(uint8_t{64});
+            debug_log.push_back(uint8_t{0});
+            for (int i = 0; i < 384; ++i)
+            {
+                debug_log.push_back(battle.bytes[i]);
+            }
         }
 
         State(const State &other)
@@ -65,43 +66,38 @@ struct BattleTypes : TypeList
             this->row_actions = other.row_actions;
             this->col_actions = other.col_actions;
             this->terminal = other.terminal;
+            clamp = other.clamp;
             result = other.result;
             memcpy(battle.bytes, other.battle.bytes, 384);
             options = other.options;
+            log_options = {log.data(), 64};
+            pkmn_gen1_battle_options_set(&options, &log_options, NULL, NULL);
+            debug_log = other.debug_log;
+
             // chance_options = pkmn_gen1_chance_options{};
             // pkmn_rational_init(&chance_options.probability);
-            log_options = {log.data(), 64};
-            // clamp = other.clamp;
-            // debug_log = other.debug_log;
-            // if (clamp)
-            // {
-            //     calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
-            //     calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
-            // }
-            pkmn_gen1_battle_options_set(&options, &log_options, NULL, NULL);
-            // debug_log = other.debug_log;
         }
 
-        State(const std::array<uint8_t, 384> &x)
-        {
-            memcpy(battle.bytes, x.data(), 384);
-            result = pkmn_result{80};
+        // State(const std::array<uint8_t, 384> &x)
+        // {
+        //     memcpy(battle.bytes, x.data(), 384);
+        //     result = pkmn_result{80};
 
-            options = pkmn_gen1_battle_options{};
-            log_options = {log.data(), 64};
-            chance_options = pkmn_gen1_chance_options{};
-            pkmn_rational_init(&chance_options.probability);
-            pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
+        //     options = pkmn_gen1_battle_options{};
+        //     log_options = {log.data(), 64};
+        //     chance_options = pkmn_gen1_chance_options{};
+        //     pkmn_rational_init(&chance_options.probability);
+        //     pkmn_gen1_battle_options_set(&options, &log_options, &chance_options, NULL);
 
-            // debug_log.push_back(uint8_t{1});
-            // debug_log.push_back(uint8_t{1});
-            // debug_log.push_back(uint8_t{64});
-            // debug_log.push_back(uint8_t{0});
-            // for (int i = 0; i < 384; ++i)
-            // {
-            //     debug_log.push_back(battle.bytes[i]);
-            // }
-        }
+        //     // debug_log.push_back(uint8_t{1});
+        //     // debug_log.push_back(uint8_t{1});
+        //     // debug_log.push_back(uint8_t{64});
+        //     // debug_log.push_back(uint8_t{0});
+        //     // for (int i = 0; i < 384; ++i)
+        //     // {
+        //     //     debug_log.push_back(battle.bytes[i]);
+        //     // }
+        // }
 
         void get_actions()
         {
@@ -189,19 +185,19 @@ struct BattleTypes : TypeList
                     this->obs.get().data(),
                     pkmn_gen1_battle_options_chance_actions(&options)->bytes,
                     16);
-                        }
+            }
 
-            // for (int i = 0; i < 64; ++i)
-            // {
-            //     debug_log.push_back(log[i]);
-            // }
-            // for (int i = 0; i < 384; ++i)
-            // {
-            //     debug_log.push_back(battle.bytes[i]);
-            // }
-            // debug_log.push_back(result);
-            // debug_log.push_back(static_cast<uint8_t>(row_action));
-            // debug_log.push_back(static_cast<uint8_t>(col_action));
+            for (int i = 0; i < 64; ++i)
+            {
+                debug_log.push_back(log[i]);
+            }
+            for (int i = 0; i < 384; ++i)
+            {
+                debug_log.push_back(battle.bytes[i]);
+            }
+            debug_log.push_back(result);
+            debug_log.push_back(static_cast<uint8_t>(row_action));
+            debug_log.push_back(static_cast<uint8_t>(col_action));
         }
 
         const Obs &get_obs() const
@@ -213,6 +209,15 @@ struct BattleTypes : TypeList
         {
             uint8_t *battle_prng_bytes = battle.bytes + n_bytes_battle;
             *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = device.uniform_64();
+        }
+
+        void save(std::filesystem::path path)
+        {
+            std::fstream file;
+            file.open(path, std::ios::binary | std::ios::app);
+            const size_t n = debug_log.size();
+            file.write(reinterpret_cast<const char *>(debug_log.data()), n);
+            file.close();
         }
     };
 };

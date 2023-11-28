@@ -104,14 +104,14 @@ void map_test(
     using Types = TreeBanditThreaded<Exp3<MonteCarloModel<BattleTypes>>>;
     Types::PRNG device{0};
     Types::Model model{0};
-    Types::Search search{{.1}, 6};
+    Types::Search search{{.1}, 4};
     std::cout << "threads " << search.threads << std::endl;
 
     using AB = AlphaBeta<EmptyModel<MappedState<Types>>>;
     AB::State ab_state{
-        2,
-        1000,
-        1 << 14,
+        1,
+        3000,
+        1 << 16,
         device,
         state,
         model,
