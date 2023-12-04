@@ -1,8 +1,8 @@
 #include "./src/battle.hh"
 
 void save(
-    const BattleTypes::State &state
-) {
+    const BattleTypes::State &state)
+{
     std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
     remove(path.data());
     std::fstream file;
@@ -98,6 +98,71 @@ void play_good_game_lol(
     }
 }
 
+template <typename Types>
+void fill(
+    typename Types::State &state,
+    const typename Types::MatrixNode *matrix_node,
+    std::filesystem::path path)
+{
+    if (matrix_node == nullptr) {
+        return;
+    }
+
+    if (matrix_node->is_terminal())
+    {
+        state.save(path / "out.txt");
+        std::string score_string = std::to_string(matrix_node->stats.solved_value.get_row_value().get());
+        std::fstream file;
+        file.open(path/score_string, std::ios::binary | std::ios::app);
+        file.close();
+        return;
+    }
+
+    state.get_actions();
+
+    for (int row_idx = 0; row_idx < state.row_actions.size(); ++row_idx)
+    {
+        for (int col_idx = 0; col_idx < state.col_actions.size(); ++col_idx)
+        {
+            const typename Types::ChanceNode *chance_node = matrix_node->access(row_idx, col_idx);
+            if (chance_node == nullptr) {
+                continue;
+            }
+
+            std::vector<typename Types::Obs> chance_actions{};
+            state.get_chance_actions(
+                state.row_actions[row_idx],
+                state.col_actions[col_idx],
+                chance_actions
+            );
+
+            const auto &data = matrix_node->stats.data_matrix.get(row_idx, col_idx);
+
+            auto joint_action_path = path;
+            joint_action_path /=
+                std::format("{}, {} - {}, {}", 
+                    std::to_string(row_idx), std::to_string(col_idx),
+                    std::to_string(data.alpha_explored.get()), std::to_string((float)data.unexplored.get()));
+            std::filesystem::create_directory(joint_action_path);
+            
+
+            for (auto chance_action : chance_actions) {
+                typename Types::State state_copy = state;
+                state_copy.apply_actions(state.row_actions[row_idx], state.col_actions[col_idx], chance_action);
+                auto chance_path = joint_action_path;
+                chance_path /= std::format(
+                    "{}, {}",
+                    (int)(state_copy.prob.get() * 1000),
+                    arrayToString(state_copy.get_obs().get()));
+                std::filesystem::create_directory(chance_path);
+                const typename Types::MatrixNode *matrix_node_next = chance_node->access(state_copy.obs);
+                fill<Types>(
+                    state_copy, matrix_node_next, chance_path);
+            }
+        }
+    }
+}
+
 void map_test(
     BattleTypes::State &state)
 {
@@ -109,8 +174,8 @@ void map_test(
 
     using AB = AlphaBeta<EmptyModel<MappedState<Types>>>;
     AB::State ab_state{
-        1,
-        3000,
+        2,
+        10000,
         1 << 16,
         device,
         state,
@@ -134,6 +199,11 @@ void map_test(
     math::print(stats.col_solution);
     std::cout << stats.row_solution.size() << ' ' << stats.col_solution.size() << std::endl;
     stats.data_matrix.print();
+
+    fill<AB>(
+        ab_state, 
+        &ab_root, 
+        "/home/user/Desktop/pkmn-pinyon-test/tree/");
 }
 
 int main(int argc, char **argv)

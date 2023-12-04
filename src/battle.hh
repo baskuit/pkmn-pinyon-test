@@ -143,8 +143,8 @@ struct BattleTypes : TypeList
         {
             if (clamp)
             {
-                calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] && 1);
-                calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] && 1);
+                calc_options.overrides.bytes[0] = 217 + 38 * (battle.bytes[383] & 1);
+                calc_options.overrides.bytes[8] = 217 + 38 * (battle.bytes[382] & 1);
             }
             pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
 
