@@ -100,6 +100,12 @@ struct State
     int hp_2;
     bool r_1;
     bool r_2;
+
+    // for unordered_map support
+    operator size_t() const
+    {
+        return 0;
+    }
 };
 
 struct Branch
@@ -125,49 +131,55 @@ void transitions(
     const Move &move_1,
     const Move &move_2,
     mpq_class &value,
-    mpq_class &weight,
     std::vector<Branch> &branches)
 {
     for (int i = 0; i < 4; ++i)
     {
-
+        // iterate over all accuracy and freeze checks
         int hit_1 = i & 1;
         int hit_2 = i & 2;
-        // int proc_1 = i & 4;
-        // int proc_2 = i & 8;
+        int proc_1 = i & 4;
+        int proc_2 = i & 8;
 
+        // corresponding probs
         mpq_class acc_1 = hit_1 ? move_1.acc : move_1.one_minus_acc;
         mpq_class acc_2 = hit_2 ? move_2.acc : move_2.one_minus_acc;
-        // mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
-        // mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
+        mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
+        mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
 
-        mpq_class p = acc_1 * acc_2;// * frz_1 * frz_2;
-        // p.canonicalize();
+        mpq_class p = acc_1 * acc_2 * frz_1 * frz_2;
+        p.canonicalize();
 
-        // bool p1_frz_win = hit_1 && proc_1 && move_1.may_freeze;
-        // bool p2_frz_win = hit_2 && proc_2 && move_2.may_freeze;
+        bool p1_frz_win = hit_1 && proc_1 && move_1.may_freeze;
+        bool p2_frz_win = hit_2 && proc_2 && move_2.may_freeze;
 
-        // // std::cout << p.get_str() << std::endl;
-
-        // // check if frz win
-
-        // if (p1_frz_win)
-        // {
-        //     if (p2_frz_win)
-        //     {
-        //     }
-        //     else
-        //     {
-        //     }
-        //     continue;
-        // }
-        // if (p2_frz_win)
-        // {
-        //     continue;
-        // }
+        // check if frz win
+        if (p1_frz_win)
+        {
+            if (p2_frz_win)
+            {
+                // speed tie
+                p *= mpq_class{1, 2};
+                p.canonicalize();
+                value += p;
+                value.canonicalize();
+            }
+            else
+            {
+                // p1 loss, add 0...
+            }
+            continue;
+        }
+        if (p2_frz_win)
+        {
+            value += p;
+            value.canonicalize();
+            continue;
+        }
 
         for (int j = 0; j < 4; ++j)
         {
+            // iterate over a crit checks
             int crit_1 = j & 1;
             int crit_2 = j & 2;
 
@@ -183,6 +195,7 @@ void transitions(
             {
                 for (const Roll &roll_2 : rolls_2)
                 {
+                    // iterate over all damage rolls
                     mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
                     mpq_class q = p * roll_probs;
                     q.canonicalize();
@@ -197,14 +210,20 @@ void transitions(
                     {
                         if (p2_ko_win)
                         {
+                            q *= mpq_class{1, 2};
+                            q.canonicalize();
+                            value += q;
+                            value.canonicalize();
                         }
                         else
                         {
+                            // p1 loss, add 0...
                         }
-                        continue;
                     }
                     if (p2_ko_win)
                     {
+                        value += q;
+                        value.canonicalize();
                         continue;
                     }
 
@@ -217,8 +236,6 @@ void transitions(
                     {
                         value += mpq_class{0};
                         value.canonicalize();
-                        weight += mpq_class{0};
-                        weight.canonicalize();
                     }
                 }
             }
@@ -237,13 +254,14 @@ size_t hash(const State &state)
 }
 
 void solve_hp(
-    int hp_1,
-    int hp_2)
+    Solution &tables,
+    const int hp_1,
+    const int hp_2)
 {
     // what simple equation does a joint action applied to a state induce?
-    for (const Move* move_1 : moves)
+    for (const Move *move_1 : moves)
     {
-        for (const Move* move_2 : moves)
+        for (const Move *move_2 : moves)
         {
             for (int i = 0; i < 4; ++i)
             {
@@ -257,9 +275,10 @@ void solve_hp(
     // and derive a system of simple equations for the value of states given those pure strategies
     // then solve and store in NE matrix
 
-    using Strategy = Move*[4];
+    using Strategy = Move *[4];
 
-    for (int s = 0; s < 256; ++s) {
+    for (int s = 0; s < 256; ++s)
+    {
 
         int a = s & (3 << 0);
         int b = s & (3 << 2);
@@ -269,7 +288,22 @@ void solve_hp(
         // every possible joint strategy
     }
 
+    // min max checks
+    for (int r = 0; r < 16; ++r)
+    {
+        for (int c = 0; c < 16; ++c)
+        {
+        }
+    }
 
+    for (int c = 0; c < 16; ++c)
+    {
+        for (int r = 0; r < 16; ++r)
+        {
+        }
+    }
+
+    // update tables
 }
 
 int main()
@@ -278,8 +312,9 @@ int main()
     State init{353, 353, false, false};
 
     std::vector<Branch> branches{};
+    std::unordered_map<size_t, mpq_class> branches_{};
+
     mpq_class value{};
-    mpq_class weight{};
 
     Solution tables{};
 
@@ -289,7 +324,6 @@ int main()
         BODY_SLAM,
         BODY_SLAM,
         value,
-        weight,
         branches);
 
     std::cout << "next states:" << std::endl;
