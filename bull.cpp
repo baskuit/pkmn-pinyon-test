@@ -108,6 +108,25 @@ struct State
     }
 };
 
+void print(const State &state)
+{
+    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.r_1 << ' ' << state.r_2 << std::endl;
+}
+
+size_t hash(const State &state)
+{
+    return 4 * MAX_HP * state.hp_1 + 4 * state.hp_2 + 2 * state.r_1 + state.r_2;
+}
+
+// State unhash(size_t hash)
+// {
+//     int hp_1, hp_2, r_1, r_2;
+//     r_2 = hash % 2;
+//     hash -= r_2;
+//     r_1
+
+// }
+
 struct Branch
 {
     State state;
@@ -120,6 +139,30 @@ struct Solution
     std::unordered_map<size_t, mpq_class> value{};
     std::unordered_map<size_t, std::vector<Move *>> moves{};
 };
+
+mpq_class lookup_value(
+    const Solution &solution,
+    const State &state
+)
+{
+    if (state.hp_1 == 0) {
+        return {0};
+    }
+    if (state.hp_2 == 0) {
+        return {1};
+    }
+    print(state);
+    if (state.hp_1 < state.hp_2) {
+        size_t h = hash(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
+        mpq_class v = solution.value.at(h);
+        v = mpq_class{1} - v;
+        v.canonicalize();
+        return v;
+    } else {
+        size_t h = hash(state);
+        return solution.value.at(h);
+    }
+}
 
 // considers all possiple transitions from a state given joint actions
 // any transition to a state with lesser hp will be looked up
@@ -227,30 +270,24 @@ void transitions(
                         continue;
                     }
 
+                    const State child{post_hp_1, post_hp_2, move_1.must_recharge, move_2.must_recharge};
+                    const size_t child_hash = hash(child);
                     if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
                     {
-                        State next{post_hp_1, post_hp_2, move_1.must_recharge, move_2.must_recharge};
-                        branches.push_back({next, p});
+                        branches.push_back({child, p});
                     }
                     else
                     {
-                        value += mpq_class{0};
+                        // child state has less hp, lookup and increment
+                        mpq_class temp = q * lookup_value(tables, child);
+                        temp.canonicalize();
+                        value += temp;
                         value.canonicalize();
                     }
                 }
             }
         }
     }
-}
-
-void print(const State &state)
-{
-    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.r_1 << ' ' << state.r_2 << std::endl;
-}
-
-size_t hash(const State &state)
-{
-    return 4 * MAX_HP * state.hp_1 + 4 * state.hp_2 + 2 * state.r_1 + state.r_1;
 }
 
 void solve_hp(
@@ -267,6 +304,41 @@ void solve_hp(
             {
                 int recharge_1 = i & 1;
                 int recharge_2 = i & 2;
+
+                if ((move_1 != &RECHARGE && recharge_1) || (move_2 != &RECHARGE && recharge_2))
+                {
+                    continue;
+                }
+
+                // move has to miss
+                mpq_class miss = move_1->one_minus_acc * move_2->one_minus_acc;
+                miss.canonicalize();
+
+                std::vector<Branch> branches{};
+                mpq_class value{};
+                State state{hp_1, hp_2, recharge_1 > 0, recharge_2 > 0};
+                transitions(state, tables, *move_1, *move_2, value, branches);
+
+
+                mpq_class total_branch_prob{0};
+                for (const Branch &branch : branches)
+                {
+                    total_branch_prob += branch.p;
+                    total_branch_prob.canonicalize();
+                }
+
+
+                print(state);
+                std::cout << "Move 1: " << move_1 << " Move 2: " << move_2 << std::endl;
+                std::cout << "Solved values: " << value.get_d() << std::endl;
+
+
+
+                // assert(total_branch_prob == miss);
+
+                // x = value + (miss) * z
+                // x = 
+                // where y is already known, but z is a peer state
             }
         }
     }
@@ -308,7 +380,14 @@ void solve_hp(
 
 int main()
 {
+    Solution tables{};
 
+    solve_hp(tables, 1, 1);
+
+    return 0;
+}
+
+void old_test () {
     State init{353, 353, false, false};
 
     std::vector<Branch> branches{};
@@ -333,6 +412,4 @@ int main()
         print(x.state);
         std::cout << x.p.get_str() << std::endl;
     }
-
-    return 0;
 }
