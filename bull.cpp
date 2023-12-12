@@ -1,6 +1,7 @@
 #include <gmpxx.h>
 
 #include <iostream>
+#include <string>
 #include <array>
 #include <vector>
 #include <unordered_map>
@@ -10,8 +11,8 @@ const size_t MAX_HP = 353;
 // may improve but currently stops when out of body slam range for both players
 const size_t MIN_HP = 0;
 
-const mpq_class CRIT{55 / 256};
-const mpq_class NO_CRIT{201 / 256};
+const mpq_class CRIT{55, 256};
+const mpq_class NO_CRIT{201, 256};
 
 struct Roll
 {
@@ -21,6 +22,7 @@ struct Roll
 
 struct Move
 {
+    std::string id;
     // probabilities. I assume (1 - p) can't be optimized if we use libgmp, so I double up
     mpq_class acc;
     mpq_class one_minus_acc;
@@ -37,6 +39,7 @@ struct Move
 };
 
 const Move BODY_SLAM{
+    "Body Slam",
     mpq_class{255, 256},
     mpq_class{1, 256},
     mpq_class{0, 1},
@@ -47,6 +50,7 @@ const Move BODY_SLAM{
     false};
 
 const Move BLIZZARD{
+    "Blizzard",
     mpq_class{229, 256},
     mpq_class{27, 256},
     mpq_class{0, 1},
@@ -57,6 +61,7 @@ const Move BLIZZARD{
     true};
 
 const Move HYPER_BEAM{
+    "Hyper Beam",
     mpq_class{229, 256},
     mpq_class{27, 256},
     mpq_class{0, 1},
@@ -66,19 +71,8 @@ const Move HYPER_BEAM{
     true,
     false};
 
-// const Move FIRE_BLAST{
-//     mpq_class{229, 256},
-//     mpq_class{27, 256},
-//     mpq_class{0, 1},
-//     mpq_class{1, 1},
-//     {{166, 1}, {167, 1}, {168, 1}, {169, 2}, {170, 1}, {171, 1}, {172, 2}, {173, 1}, {174, 1}, {175, 1}, {176, 2}, {177, 1}, {178, 1}, {179, 2}, {180, 1}, {181, 1}, {182, 2}, {183, 1}, {184, 1}, {185, 1}, {186, 2}, {187, 1}, {188, 1}, {189, 2}, {190, 1}, {191, 1}, {192, 2}, {193, 1}, {194, 1}, {195, 1}, {196, 1}},
-//     {{324, 1}, {325, 1}, {327, 1}, {328, 1}, {330, 1}, {331, 1}, {333, 1}, {334, 1}, {336, 1}, {337, 1}, {339, 1}, {340, 1}, {342, 1}, {343, 1}, {345, 1}, {346, 1}, {348, 1}, {349, 1}, {351, 1}, {352, 1}, {354, 1}, {355, 1}, {357, 1}, {358, 1}, {360, 1}, {361, 1}, {363, 1}, {364, 1}, {366, 1}, {367, 1}, {369, 1}, {370, 1}, {372, 1}, {373, 1}, {375, 1}, {376, 1}, {378, 1}, {379, 1}, {381, 1}},
-//     true,
-//     false};
-
-// TODO stomp etc lol
-
 const Move RECHARGE{
+    "Recharge",
     mpq_class{256, 256},
     mpq_class{0, 1},
     mpq_class{0, 1},
@@ -88,11 +82,13 @@ const Move RECHARGE{
     false,
     false};
 
-std::vector<const Move *> moves{
+const std::vector<const Move *> MOVES{
     &BODY_SLAM,
     &BLIZZARD,
     &HYPER_BEAM,
     &RECHARGE};
+const int N_MOVES = MOVES.size();
+
 
 struct State
 {
@@ -142,23 +138,27 @@ struct Solution
 
 mpq_class lookup_value(
     const Solution &solution,
-    const State &state
-)
+    const State &state)
 {
-    if (state.hp_1 == 0) {
+    if (state.hp_1 == 0)
+    {
         return {0};
     }
-    if (state.hp_2 == 0) {
+    if (state.hp_2 == 0)
+    {
         return {1};
     }
     print(state);
-    if (state.hp_1 < state.hp_2) {
+    if (state.hp_1 < state.hp_2)
+    {
         size_t h = hash(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
         mpq_class v = solution.value.at(h);
         v = mpq_class{1} - v;
         v.canonicalize();
         return v;
-    } else {
+    }
+    else
+    {
         size_t h = hash(state);
         return solution.value.at(h);
     }
@@ -176,8 +176,12 @@ void transitions(
     mpq_class &value,
     std::vector<Branch> &branches)
 {
-    for (int i = 0; i < 4; ++i)
+    mpq_class total_prob{0};
+
+    for (int i = 0; i < 16; ++i)
     {
+        total_prob.canonicalize();
+
         // iterate over all accuracy and freeze checks
         int hit_1 = i & 1;
         int hit_2 = i & 2;
@@ -199,9 +203,12 @@ void transitions(
         // check if frz win
         if (p1_frz_win)
         {
+            // should not be affected by the speed tie stuff?
+            total_prob += p;
+
             if (p2_frz_win)
             {
-                // speed tie
+                // speed tie, only modify p so that value is correct
                 p *= mpq_class{1, 2};
                 p.canonicalize();
                 value += p;
@@ -215,6 +222,8 @@ void transitions(
         }
         if (p2_frz_win)
         {
+            total_prob += p;
+
             value += p;
             value.canonicalize();
             continue;
@@ -223,8 +232,8 @@ void transitions(
         for (int j = 0; j < 4; ++j)
         {
             // iterate over a crit checks
-            int crit_1 = j & 1;
-            int crit_2 = j & 2;
+            const int crit_1 = j & 1;
+            const int crit_2 = j & 2;
 
             const mpq_class &crit_p_1 = crit_1 ? CRIT : NO_CRIT;
             const mpq_class &crit_p_2 = crit_2 ? CRIT : NO_CRIT;
@@ -240,7 +249,8 @@ void transitions(
                 {
                     // iterate over all damage rolls
                     mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
-                    mpq_class q = p * roll_probs;
+                    roll_probs.canonicalize();
+                    mpq_class q = crit_p * roll_probs;
                     q.canonicalize();
 
                     int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
@@ -249,8 +259,11 @@ void transitions(
                     bool p1_ko_win = post_hp_2 == 0;
                     bool p2_ko_win = post_hp_1 == 0;
 
+                    total_prob += q;
+
                     if (p1_ko_win)
                     {
+                        // don't need to increm
                         if (p2_ko_win)
                         {
                             q *= mpq_class{1, 2};
@@ -262,6 +275,7 @@ void transitions(
                         {
                             // p1 loss, add 0...
                         }
+                        continue;
                     }
                     if (p2_ko_win)
                     {
@@ -274,7 +288,7 @@ void transitions(
                     const size_t child_hash = hash(child);
                     if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
                     {
-                        branches.push_back({child, p});
+                        branches.push_back({child, q});
                     }
                     else
                     {
@@ -288,6 +302,7 @@ void transitions(
             }
         }
     }
+    // std::cout << "Transition total probs: " << total_prob.get_str() << std::endl;
 }
 
 void solve_hp(
@@ -295,17 +310,22 @@ void solve_hp(
     const int hp_1,
     const int hp_2)
 {
+    using StateWithMovesHash = std::tuple<size_t, int, int>;
+    std::unordered_map<StateWithMovesHash, int> mem{};
     // what simple equation does a joint action applied to a state induce?
-    for (const Move *move_1 : moves)
+    for (const Move *move_1 : MOVES)
     {
-        for (const Move *move_2 : moves)
+        for (const Move *move_2 : MOVES)
         {
             for (int i = 0; i < 4; ++i)
             {
                 int recharge_1 = i & 1;
                 int recharge_2 = i & 2;
 
-                if ((move_1 != &RECHARGE && recharge_1) || (move_2 != &RECHARGE && recharge_2))
+                if (
+                    ((move_1 == &RECHARGE) != recharge_1) ||
+                    ((move_2 == &RECHARGE) != recharge_2)
+                )
                 {
                     continue;
                 }
@@ -319,7 +339,6 @@ void solve_hp(
                 State state{hp_1, hp_2, recharge_1 > 0, recharge_2 > 0};
                 transitions(state, tables, *move_1, *move_2, value, branches);
 
-
                 mpq_class total_branch_prob{0};
                 for (const Branch &branch : branches)
                 {
@@ -327,17 +346,16 @@ void solve_hp(
                     total_branch_prob.canonicalize();
                 }
 
-
                 print(state);
-                std::cout << "Move 1: " << move_1 << " Move 2: " << move_2 << std::endl;
-                std::cout << "Solved values: " << value.get_d() << std::endl;
-
+                std::cout << "Move 1: " << move_1->id << " Move 2: " << move_2->id << std::endl;
+                std::cout << "Solved (weighted) values: " << value.get_str() << std::endl;
+                std::cout << "Unsolved branch prob: " << total_branch_prob.get_str() << std::endl;
 
 
                 // assert(total_branch_prob == miss);
 
                 // x = value + (miss) * z
-                // x = 
+                // x =
                 // where y is already known, but z is a peer state
             }
         }
@@ -349,15 +367,26 @@ void solve_hp(
 
     using Strategy = Move *[4];
 
+    // every possible joint strategy
     for (int s = 0; s < 256; ++s)
     {
 
-        int a = s & (3 << 0);
-        int b = s & (3 << 2);
-        int c = s & (3 << 4);
-        int d = s & (3 << 6);
+        int a = (s & (3 << 0)) >> 0;
+        int b = (s & (3 << 2)) >> 2;
+        int c = (s & (3 << 4)) >> 4;
+        int d = (s & (3 << 6)) >> 6;
+        // a is strategy for p1 at S00, b at S01, c strategy for p2 at S00, d at S10
+        const Move * p1_s00 = MOVES[a];
+        const Move * p1_s01 = MOVES[b];
+        const Move * p2_s00 = MOVES[c];
+        const Move * p2_s10 = MOVES[d];
 
-        // every possible joint strategy
+        for (int r = 0; r < 4; ++r) {
+            const bool r1 = r & 1;
+            const bool r2 = r & 2;
+            const State state{hp_1, hp_2, r1, r2};
+        }
+
     }
 
     // min max checks
@@ -378,20 +407,11 @@ void solve_hp(
     // update tables
 }
 
-int main()
+void old_test()
 {
-    Solution tables{};
-
-    solve_hp(tables, 1, 1);
-
-    return 0;
-}
-
-void old_test () {
-    State init{353, 353, false, false};
+    State init{MAX_HP, MAX_HP, false, false};
 
     std::vector<Branch> branches{};
-    std::unordered_map<size_t, mpq_class> branches_{};
 
     mpq_class value{};
 
@@ -405,11 +425,20 @@ void old_test () {
         value,
         branches);
 
-    std::cout << "next states:" << std::endl;
+    std::cout << "NEXT STATES:" << std::endl;
 
     for (const auto x : branches)
     {
         print(x.state);
         std::cout << x.p.get_str() << std::endl;
     }
+}
+
+int main()
+{
+    Solution tables{};
+
+    solve_hp(tables, 1, 1);
+
+    return 0;
 }
