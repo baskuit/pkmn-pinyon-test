@@ -25,7 +25,7 @@ void printMatrix(const Eigen::Matrix<mpq_class, 4, 4> &matrix)
 const size_t MAX_HP = 353;
 // after this point, we calculate instead of using analytic solution.
 // may improve but currently stops when out of body slam range for both players
-const size_t MIN_HP = 0;
+const size_t MIN_HP = 95;
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
@@ -155,15 +155,6 @@ std::tuple<int, int, int, int> unhash_a(size_t h)
     return {r1, r2, m1, m2};
 }
 
-// State unhash(size_t hash)
-// {
-//     int hp_1, hp_2, r_1, r_2;
-//     r_2 = hash % 2;
-//     hash -= r_2;
-//     r_1
-
-// }
-
 struct Branch
 {
     State state;
@@ -174,8 +165,34 @@ struct Branch
 struct Solution
 {
     std::unordered_map<size_t, mpq_class> value{};
-    std::unordered_map<size_t, std::vector<Move *>> moves{};
+    std::unordered_map<size_t, std::vector<const Move *>[2]> moves {};
 };
+
+void init_tables(Solution &tables)
+{
+    for (int hp_1 = 1; hp_1 <= MIN_HP; ++hp_1)
+    {
+        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        {
+            tables.value[hash({hp_1, hp_2, false, false})] = mpq_class{1, 2};
+            tables.value[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
+            tables.value[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
+            tables.value[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
+            tables.moves[hash({hp_1, hp_2, false, false})][0] = {&BODY_SLAM};
+            tables.moves[hash({hp_1, hp_2, false, false})][1] = {&BODY_SLAM};
+            tables.moves[hash({hp_1, hp_2, false, true})][0] = {&BODY_SLAM};
+            tables.moves[hash({hp_1, hp_2, false, true})][1] = {&RECHARGE};
+            tables.moves[hash({hp_1, hp_2, true, false})][0] = {&RECHARGE};
+            tables.moves[hash({hp_1, hp_2, true, false})][1] = {&BODY_SLAM};
+            tables.moves[hash({hp_1, hp_2, true, true})][0] = {&RECHARGE};
+            tables.moves[hash({hp_1, hp_2, true, true})][1] = {&RECHARGE};
+
+            // tables.moves[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
+            // tables.moves[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
+            // tables.moves[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
+        }
+    }
+}
 
 mpq_class lookup_value(
     const Solution &solution,
@@ -190,8 +207,6 @@ mpq_class lookup_value(
         return {1};
     }
 
-        
-
     // print(state);
     if (state.hp_1 < state.hp_2)
     {
@@ -204,6 +219,14 @@ mpq_class lookup_value(
     else
     {
         size_t h = hash(state);
+        // print(state);
+        // std::cout << '2' << std::endl;
+
+        // for (const auto x : solution.value) {
+        //     std::cout << ": " << x.first << std::endl;
+        // }
+        // std::cout << h << std::endl;
+
         return solution.value.at(h);
     }
 }
@@ -337,6 +360,8 @@ void transitions(
                     else
                     {
                         // child state has less hp, lookup and increment
+                        // print(state);
+                        // std::cout << '!' << std::endl;
                         mpq_class temp = q * lookup_value(tables, child);
                         temp.canonicalize();
                         value += temp;
@@ -593,13 +618,30 @@ void solve_hp(
     auto value_tuple = values4.at(best_r * N_MOVES * N_MOVES + best_c);
     std::cout << std::get<0>(value_tuple).get_str() << ' ';
     std::cout << std::get<1>(value_tuple).get_str() << ' ';
-    std::cout << std::get<2>(value_tuple).get_str() << ' ';
-    std::cout << std::get<3>(value_tuple).get_str() << std::endl;
+    std::cout << std::get<2>(value_tuple).get_str() << std::endl;
+    std::cout << "STRATEGIES: " << std::endl;
+    std::cout << MOVES[a]->id << ", " << MOVES[b]->id << std::endl;
+    std::cout << MOVES[c]->id << ", " << MOVES[d]->id << std::endl;
+    std::cout << std::endl;
+
 
     tables.value[hash({hp_1, hp_2, false, false})] = std::get<0>(value_tuple);
     tables.value[hash({hp_1, hp_2, false, true})] = std::get<1>(value_tuple);
     tables.value[hash({hp_1, hp_2, true, false})] = std::get<2>(value_tuple);
     tables.value[hash({hp_1, hp_2, true, true})] = std::get<3>(value_tuple);
+
+    // if (hp_1 == 96 && hp_2 == 9) {
+    //     std::cout << "FUCKING SOLVED ALREADY" << std::endl;
+    // }
+
+    tables.moves[hash({hp_1, hp_2, false, false})][0] = {MOVES[a]};
+    tables.moves[hash({hp_1, hp_2, false, false})][1] = {MOVES[c]};
+    tables.moves[hash({hp_1, hp_2, false, true})][0] = {MOVES[b]};
+    tables.moves[hash({hp_1, hp_2, false, true})][1] = {&RECHARGE};
+    tables.moves[hash({hp_1, hp_2, true, false})][0] = {&RECHARGE};
+    tables.moves[hash({hp_1, hp_2, true, false})][1] = {MOVES[d]};
+    tables.moves[hash({hp_1, hp_2, true, true})][0] = {&RECHARGE};
+    tables.moves[hash({hp_1, hp_2, true, true})][1] = {&RECHARGE};
 }
 
 void old_test()
@@ -640,7 +682,9 @@ int main()
 {
     Solution tables{};
 
-    for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
+    init_tables(tables);
+
+    for (int hp_1 = MIN_HP; hp_1 <= MAX_HP; ++hp_1)
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
