@@ -10,11 +10,12 @@
 
 #include "extern/eigen/Eigen/Dense"
 
-void printMatrix(const Eigen::Matrix<mpq_class, 4, 4> &matrix)
+template <size_t rows, size_t cols>
+void printMatrix(const Eigen::Matrix<mpq_class, rows, cols> &matrix)
 {
-    for (int i = 0; i < matrix.rows(); ++i)
+    for (int i = 0; i < rows; ++i)
     {
-        for (int j = 0; j < matrix.cols(); ++j)
+        for (int j = 0; j < cols; ++j)
         {
             std::cout << matrix(i, j).get_str() << '\t';
         }
@@ -100,13 +101,13 @@ const Move RECHARGE{
 
 const std::vector<const Move *> MOVES{
     &BODY_SLAM,
-    &BLIZZARD,
+    // &BLIZZARD,
     &HYPER_BEAM};
 const int N_MOVES = MOVES.size();
 
 const std::vector<const Move *> MOVES_WITH_RECHARGE{
     &BODY_SLAM,
-    &BLIZZARD,
+    // &BLIZZARD,
     &HYPER_BEAM,
     &RECHARGE};
 const int N_MOVES_WITH_RECHARGE = MOVES_WITH_RECHARGE.size();
@@ -141,29 +142,7 @@ State unhash_state(size_t h)
     h -= r2;
     h /= MAX_HP;
     const int r1 = h;
-    return {r1, r2, bool{m1}, bool{m2}};
-}
-
-// horrible name and not clear what it does really
-size_t hash_a(const int r1, const int r2, const int m1, const int m2)
-{
-    return r1 * 2 * N_MOVES * N_MOVES + r2 * N_MOVES * N_MOVES + m1 * N_MOVES + m2;
-}
-
-std::tuple<int, int, int, int>
-unhash_a(size_t h)
-{
-    const int m2 = h % N_MOVES;
-    h -= m2;
-    h /= N_MOVES;
-    const int m1 = h % N_MOVES;
-    h -= m1;
-    h /= N_MOVES;
-    const int r2 = h % 2;
-    h -= r2;
-    h /= 2;
-    const int r1 = h;
-    return {r1, r2, m1, m2};
+    return {r1, r2, static_cast<bool>(m1), static_cast<bool>(m2)};
 }
 
 struct Branch
@@ -176,7 +155,7 @@ struct Branch
 struct Solution
 {
     std::unordered_map<size_t, mpq_class> value_table{};
-    std::unordered_map<size_t, std::vector<const Move *>[2]> move_table{};
+    std::unordered_map<size_t, std::vector<const Move *>[2]> move_table {};
 };
 
 void init_tables(Solution &tables)
@@ -209,18 +188,6 @@ mpq_class lookup_value(
     const Solution &tables,
     const State &state)
 {
-    // asserts since ko_win check should pick these up first
-    if (state.hp_1 == 0)
-    {
-        assert(false);
-        return {0};
-    }
-    if (state.hp_2 == 0)
-    {
-        assert(false);
-        return {1};
-    }
-
     if (state.hp_1 < state.hp_2)
     {
         const size_t reverse_hash = hash_state(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
@@ -248,14 +215,16 @@ void transitions(
     mpq_class &value,
     std::vector<Branch> &branches)
 {
+    // Debug only
     // State hashes in, prob of encountering out
-    // std::unordered_map<size_t, mpq_class> children{};
-
+    std::unordered_map<size_t, mpq_class> children{};
     mpq_class total_prob{0};
 
     for (int i = 0; i < 16; ++i)
     {
+        // after incrementing and 'continue' call
         total_prob.canonicalize();
+        value.canonicalize();
 
         // iterate over all accuracy and freeze checks
         const bool hit_1 = i & 1;
@@ -287,21 +256,22 @@ void transitions(
             // should not be affected by the speed tie stuff?
             if (p2_frz_win)
             {
-                // speed tie, only modify p so that value is correct
+                // speed tie, only modify p
                 value += hit_proc_prob * mpq_class{1, 2};
-                value.canonicalize();
-                // TODO I think I messed this up
-                total_prob += hit_proc_prob * mpq_class{1, 2};
-                // children[-1] += hit_proc_prob * mpq_class{1, 2};
-                // children[-2] += hit_proc_prob * mpq_class{1, 2};
+
+                total_prob += hit_proc_prob;
+                children[-1] += hit_proc_prob * mpq_class{1, 2};
+                children[-2] += hit_proc_prob * mpq_class{1, 2};
+                children[-1].canonicalize();
+                children[-2].canonicalize();
             }
             else
             {
                 value += hit_proc_prob;
-                value.canonicalize();
 
                 total_prob += hit_proc_prob;
-                // children[-1] += hit_proc_prob;
+                children[-1] += hit_proc_prob;
+                children[-1].canonicalize();
             }
             continue;
         }
@@ -309,13 +279,14 @@ void transitions(
         {
             // p1 loss, add 0...
             total_prob += hit_proc_prob;
-            // children[-2] += hit_proc_prob;
+            children[-2] += hit_proc_prob;
+            children[-2].canonicalize();
             continue;
         }
 
         for (int j = 0; j < 4; ++j)
         {
-            // iterate over a crit checks
+            // iterate over crit checks
             const bool crit_1 = j & 1;
             const bool crit_2 = j & 2;
 
@@ -342,48 +313,42 @@ void transitions(
                     const int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
                     const int post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
 
-                    // std::cout << "ROLLS: " << roll_1.dmg << " (crit): " << crit_1 << " ; " << roll_2.dmg << " (crit): " << crit_2 << std::endl;
-                    // std::cout << "HP: " << post_hp_1 << ' ' << post_hp_2 << std::endl;
-
                     const bool p1_ko_win = (post_hp_2 == 0);
                     const bool p2_ko_win = (post_hp_1 == 0);
 
                     if (p1_ko_win)
                     {
-                        // don't need to increm
                         if (p2_ko_win)
                         {
                             value += crit_roll_prob * mpq_class{1, 2};
-                            value.canonicalize();
 
-                            // children[-1] += crit_roll_prob * mpq_class{1, 2};
-                            // children[-2] += crit_roll_prob * mpq_class{1, 2};
-                            // children[-1].canonicalize();
-                            // children[-2].canonicalize();
+                            children[-1] += crit_roll_prob * mpq_class{1, 2};
+                            children[-2] += crit_roll_prob * mpq_class{1, 2};
+                            children[-1].canonicalize();
+                            children[-2].canonicalize();
                         }
                         else
                         {
                             value += crit_roll_prob;
-                            value.canonicalize();
 
-                            // children[-1] += crit_roll_prob;
-                            // children[-1].canonicalize();
+                            children[-1] += crit_roll_prob;
+                            children[-1].canonicalize();
                         }
                         continue;
                     }
                     if (p2_ko_win)
                     {
                         // p1 loss, add 0...
-                        // children[-2] += crit_roll_prob;
-                        // children[-2].canonicalize();
+                        children[-2] += crit_roll_prob;
+                        children[-2].canonicalize();
                         continue;
                     }
 
                     const State child{post_hp_1, post_hp_2, move_1.must_recharge && hit_1, move_2.must_recharge && hit_2};
                     const size_t child_hash = hash_state(child);
 
-                    // children[child_hash] += crit_roll_prob;
-                    // children[child_hash].canonicalize();
+                    children[child_hash] += crit_roll_prob;
+                    children[child_hash].canonicalize();
 
                     if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
                     {
@@ -395,14 +360,42 @@ void transitions(
                         mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
                         weighted_solved_value.canonicalize();
                         value += weighted_solved_value;
-                        value.canonicalize();
                     }
                 }
             }
         }
     }
 
+    // for (const auto &pair : children) {
+    //     const State child = unhash_state(pair.first);
+    //     std::cout << "STATE: ";
+    //     print_state(child);
+    //     std::cout << pair.second.get_d() << std::endl << std::endl;
+    // }
+
     assert(total_prob == mpq_class{1});
+}
+
+// horrible name and not clear what it does really
+size_t hash_a(const int r1, const int r2, const int m1, const int m2)
+{
+    return r1 * 2 * N_MOVES * N_MOVES + r2 * N_MOVES * N_MOVES + m1 * N_MOVES + m2;
+}
+
+std::tuple<int, int, int, int>
+unhash_a(size_t h)
+{
+    const int m2 = h % N_MOVES;
+    h -= m2;
+    h /= N_MOVES;
+    const int m1 = h % N_MOVES;
+    h -= m1;
+    h /= N_MOVES;
+    const int r2 = h % 2;
+    h -= r2;
+    h /= 2;
+    const int r1 = h;
+    return {r1, r2, m1, m2};
 }
 
 void solve_hp(
@@ -414,7 +407,10 @@ void solve_hp(
         size_t,
         std::tuple<mpq_class, mpq_class, State>>
         memo{};
-    // what simple equation does a joint action applied to a state induce?
+    // given (hp,) recharge states and joint actions,
+    // what is the data from the transitions function?
+
+    // That is, what is the weighted solved values, total branch prob, and unique state?
 
     for (int m1 = 0; m1 < N_MOVES_WITH_RECHARGE; ++m1)
     {
@@ -425,8 +421,8 @@ void solve_hp(
 
             for (int i = 0; i < 4; ++i)
             {
-                int recharge_1 = i & 1;
-                int recharge_2 = (i & 2) / 2;
+                const bool recharge_1 = i & 1;
+                const bool recharge_2 = i & 2;
 
                 if (
                     ((move_1 == &RECHARGE) != recharge_1) ||
@@ -441,23 +437,23 @@ void solve_hp(
 
                 std::vector<Branch> branches{};
                 mpq_class value{0};
-                const State state{hp_1, hp_2, recharge_1 > 0, recharge_2 > 0};
+                const State state{hp_1, hp_2, recharge_1, recharge_2};
                 const size_t hash_ = hash_a(recharge_1, recharge_2, m1, m2);
 
                 transitions(state, tables, *move_1, *move_2, value, branches);
 
                 mpq_class total_branch_prob{0};
-                const State &child_state = branches[0].state;
+                const State &unique_child_state = branches[0].state;
                 for (const Branch &branch : branches)
                 {
                     total_branch_prob += branch.prob;
                     total_branch_prob.canonicalize();
-                    assert(child_state.r_1 == branch.state.r_1 && child_state.r_2 == branch.state.r_2);
+                    assert(unique_child_state.r_1 == branch.state.r_1 && unique_child_state.r_2 == branch.state.r_2);
                 }
                 assert(miss == total_branch_prob);
 
                 // Add computed date to memo
-                memo[hash_] = {value, total_branch_prob, child_state};
+                memo[hash_] = {value, total_branch_prob, unique_child_state};
             }
         }
     }
@@ -465,165 +461,190 @@ void solve_hp(
     // now iterate over every possible pure strategy over the equal hp states
     // and derive a system of simple equations for the value of states given those pure strategies
     // then solve and store in NE matrix
-
     mpq_class p1_value_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES];
     mpq_class p1_value_matrix_full[N_MOVES * N_MOVES][N_MOVES * N_MOVES][3];
 
+    // Solved value once the NE over the 4 state same-HP subgame has been found
     std::unordered_map<size_t,
                        std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>>
         values4{};
 
     // every possible joint strategy
-    for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+    for (int row_strat = 0; row_strat < N_MOVES * N_MOVES; ++row_strat)
     {
 
-        for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+        for (int col_strat = 0; col_strat < N_MOVES * N_MOVES; ++col_strat)
         {
-            const int a = i % N_MOVES;
-            const int b = i / N_MOVES;
-            const int c = j % N_MOVES;
-            const int d = j / N_MOVES;
-
-            const Move *const p1_s00 = MOVES[a];
-            const Move *const p1_s01 = MOVES[b];
-            const Move *const p2_s00 = MOVES[c];
-            const Move *const p2_s10 = MOVES[d];
+            const int a = row_strat % N_MOVES;
+            const int b = row_strat / N_MOVES;
+            const int c = col_strat % N_MOVES;
+            const int d = col_strat / N_MOVES;
 
             // Now construct matrix
+            Eigen::Matrix<mpq_class, 4, 4>
+                coefficients = Eigen::Matrix<mpq_class, 4, 4>::Identity();
 
-            Eigen::Matrix<mpq_class, 4, 4> coefficients = Eigen::Matrix<mpq_class, 4, 4>::Identity();
+            const size_t hash00 = hash_a(0, 0, a, c);
+            const size_t hash01 = hash_a(0, 1, b, N_MOVES);
+            const size_t hash10 = hash_a(1, 0, N_MOVES, d);
+            const size_t hash11 = hash_a(1, 1, N_MOVES, N_MOVES);
 
-            const size_t h00 = hash_a(0, 0, a, c);
-            const size_t h01 = hash_a(0, 1, b, N_MOVES);
-            const size_t h10 = hash_a(1, 0, N_MOVES, d);
-            const size_t h11 = hash_a(1, 1, N_MOVES, N_MOVES);
+            // {value, same hp prob, child state}
 
-            const auto w = memo.at(h00);
-            const auto x = memo.at(h01);
-            const auto y = memo.at(h10);
-            const auto z = memo.at(h11);
+            mpq_class value00;
+            mpq_class value01;
+            mpq_class value10;
+            mpq_class value11;
 
-            mpq_class y00 = std::get<0>(w);
-            mpq_class y01 = std::get<0>(x);
-            mpq_class y10 = std::get<0>(y);
-            mpq_class y11 = {0};
-            assert(std::get<0>(z) == mpq_class{0});
+            // Construct transition matrix and solve for the 4 same-HP states
+            {
+                const auto w = memo.at(hash00);
+                const auto x = memo.at(hash01);
+                const auto y = memo.at(hash10);
+                const auto z = memo.at(hash11);
 
-            mpq_class p00 = std::get<1>(w);
-            mpq_class p01 = std::get<1>(x);
-            mpq_class p10 = std::get<1>(y);
-            mpq_class p11 = {1};
-            assert(std::get<1>(z) == mpq_class{1});
+                mpq_class y00 = std::get<0>(w);
+                mpq_class y01 = std::get<0>(x);
+                mpq_class y10 = std::get<0>(y);
+                mpq_class y11 = std::get<0>(z);
+                assert(y11 == mpq_class{0});
 
-            const State &next_state00 = std::get<2>(w);
-            const State &next_state01 = std::get<2>(x);
-            const State &next_state10 = std::get<2>(y);
-            const State &next_state11 = std::get<2>(z);
+                mpq_class p00 = std::get<1>(w);
+                mpq_class p01 = std::get<1>(x);
+                mpq_class p10 = std::get<1>(y);
+                mpq_class p11 = std::get<1>(z);
+                assert(p11 == mpq_class{1});
 
-            coefficients(0, 2 * next_state00.r_1 + next_state00.r_2) -= p00;
-            coefficients(1, 2 * next_state01.r_1 + next_state01.r_2) -= p01;
-            coefficients(2, 2 * next_state10.r_1 + next_state10.r_2) -= p10;
-            coefficients(3, 2 * next_state11.r_1 + next_state11.r_2) -= p11;
-            // printMatrix(coefficients);
+                const State &next_state00 = std::get<2>(w);
+                const State &next_state01 = std::get<2>(x);
+                const State &next_state10 = std::get<2>(y);
+                const State &next_state11 = std::get<2>(z);
 
-            Eigen::Matrix<mpq_class, 4, 1> constants;
-            constants << y00, y01, y10, y11;
+                coefficients(0, 2 * next_state00.r_1 + next_state00.r_2) -= p00;
+                coefficients(1, 2 * next_state01.r_1 + next_state01.r_2) -= p01;
+                coefficients(2, 2 * next_state10.r_1 + next_state10.r_2) -= p10;
+                coefficients(3, 2 * next_state11.r_1 + next_state11.r_2) -= p11;
+                // printMatrix(coefficients);
 
-            // Perform LU decomposition
-            Eigen::FullPivLU<Eigen::Matrix<mpq_class, 4, 4>> lu(coefficients);
+                Eigen::Matrix<mpq_class, 4, 1> constants;
+                constants << y00, y01, y10, y11;
 
-            // Solve the system of linear equations using LU decomposition
-            Eigen::Matrix<mpq_class, 4, 1> solution = lu.solve(constants);
+                // Perform LU decomposition
+                Eigen::FullPivLU<Eigen::Matrix<mpq_class, 4, 4>> lu(coefficients);
 
-            mpq_class v00 = solution(0, 0);
-            mpq_class v01 = solution(1, 0);
-            mpq_class v10 = solution(2, 0);
-            mpq_class v11 = solution(3, 0);
+                // Solve the system of linear equations using LU decomposition
+                // v00 is value of the state {hp1, hp2, false, false}, etc
+                Eigen::Matrix<mpq_class, 4, 1> solution = lu.solve(constants);
 
-            std::tuple<mpq_class, mpq_class, mpq_class, mpq_class> value_tuple = {v00, v01, v10, v11};
+                value00 = solution(0, 0);
+                value01 = solution(1, 0);
+                value10 = solution(2, 0);
+                value11 = solution(3, 0);
 
-            values4[i * N_MOVES * N_MOVES + j] = value_tuple;
+                value00.canonicalize();
+                value01.canonicalize();
+                value10.canonicalize();
+                value11.canonicalize();
 
-            v00.canonicalize();
-            v01.canonicalize();
-            v10.canonicalize();
-            v11.canonicalize();
+                // Print linear system for dubugging
+                // std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
+                // std::cout << "MATRIX:" << std::endl;
+                // printMatrix<4, 4>(coefficients);
+                // std::cout << "CONSTANTS:" << std::endl;
+                // printMatrix<4, 1>(constants);
+                // std::cout << std::endl;
+            };
 
-            // std::cout << "P1 STRATEGY: " << p1_s00->id << ' ' << p1_s01->id << std::endl;
-            // std::cout << "P2 STRATEGY: " << p2_s00->id << ' ' << p2_s10->id << std::endl;
+            // Store solved values in joint strategy matrices
+            std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>
+                value_tuple = {value00, value01, value10, value11};
 
-            // std::cout << v00.get_str() << " = " << v00.get_d() << std::endl;
-            // std::cout << v01.get_str() << " = " << v01.get_d() << std::endl;
-            // std::cout << v10.get_str() << " = " << v10.get_d() << std::endl;
-            // std::cout << v11.get_str() << " = " << v11.get_d() << std::endl;
+            values4[row_strat * N_MOVES * N_MOVES + col_strat] = value_tuple;
 
-            mpq_class total_p1_value = v00 + v01 + v10 + v11;
+            // hack
+            mpq_class total_p1_value = value00 + value01 + value10 + value11;
             total_p1_value.canonicalize();
-            p1_value_matrix[i][j] = total_p1_value;
+            p1_value_matrix[row_strat][col_strat] = total_p1_value;
 
-            p1_value_matrix_full[i][j][0] = v00;
-            p1_value_matrix_full[i][j][1] = v01;
-            p1_value_matrix_full[i][j][2] = v10;
+            p1_value_matrix_full[row_strat][col_strat][0] = value00;
+            p1_value_matrix_full[row_strat][col_strat][1] = value01;
+            p1_value_matrix_full[row_strat][col_strat][2] = value10;
         }
     }
 
-    // // Print joint strategy matrix
-    // for (int i = 0; i < N_MOVES * N_MOVES; ++i)
-    // {
-    //     for (int j = 0; j < N_MOVES * N_MOVES; ++j)
-    //     {
-    //         std::cout << p1_value_matrix[i][j].get_d() << ' ';
-    //     }
-    //     std::cout << std::endl;
-    // }
+    for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+    {
+        for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+        {
+            std::cout << p1_value_matrix_full[i][j][0].get_str() << ' ';
+        }
+        std::cout << std::endl;
+    }
+
+    // If both players use the same strategy from {hp1, hp2, 0, 0} then the value should be 1/2
+    for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+    {
+        const bool diag_check = (p1_value_matrix_full[i][i][0] == mpq_class{1, 2});
+        assert(diag_check);
+    }
+    // Switching stategies should flip expected score
+    for (int i = 0; i < N_MOVES * N_MOVES; ++i) {
+        for (int j = 0; j < N_MOVES * N_MOVES; ++j) {
+            const mpq_class a = p1_value_matrix_full[i][j][0];
+            const mpq_class b = p1_value_matrix_full[j][i][0];
+            mpq_class c = a + b;
+            c.canonicalize();
+            assert(c == mpq_class{1});
+        }
+    }
 
     // min max checks
     int best_r, best_c;
-
     mpq_class max{0};
-    for (int r = 0; r < N_MOVES; ++r)
+    mpq_class min{4};
     {
-        mpq_class min_{N_MOVES};
+        for (int r = 0; r < N_MOVES; ++r)
+        {
+            mpq_class min_{4};
+
+            for (int c = 0; c < N_MOVES; ++c)
+            {
+                mpq_class x = p1_value_matrix[r][c];
+                if (x < min_)
+                {
+                    min_ = x;
+                }
+            }
+
+            if (min_ > max)
+            {
+                max = min_;
+                best_r = r;
+            }
+        }
 
         for (int c = 0; c < N_MOVES; ++c)
         {
-            mpq_class x = p1_value_matrix[r][c];
-            if (x < min_)
+            mpq_class max_{0};
+
+            for (int r = 0; r < N_MOVES; ++r)
             {
-                min_ = x;
+                mpq_class x = p1_value_matrix[r][c];
+                if (x > max_)
+                {
+                    max_ = x;
+                }
+            }
+
+            if (max_ < min)
+            {
+                min = max_;
+                best_c = c;
             }
         }
-
-        if (min_ > max)
-        {
-            max = min_;
-            best_r = r;
-        }
-    }
-
-    mpq_class min{N_MOVES};
-    for (int c = 0; c < N_MOVES; ++c)
-    {
-        mpq_class max_{0};
-
-        for (int r = 0; r < N_MOVES; ++r)
-        {
-            mpq_class x = p1_value_matrix[r][c];
-            if (x > max_)
-            {
-                max_ = x;
-            }
-        }
-
-        if (max_ < min)
-        {
-            min = max_;
-            best_c = c;
-        }
-    }
+    };
 
     // assert(min == max);
-
     if (min != max)
     {
         std::cout << "Assertion failed: " << min.get_str() << ' ' << max.get_str() << std::endl;
@@ -658,20 +679,12 @@ void solve_hp(
         exit(1);
     }
 
+    // Answer found, adding to table
     const int a = best_r % N_MOVES;
     const int b = best_r / N_MOVES;
     const int c = best_c % N_MOVES;
     const int d = best_c / N_MOVES;
-
-    std::cout << "FINAL VALUES" << std::endl;
-    auto value_tuple = values4.at(best_r * N_MOVES * N_MOVES + best_c);
-    std::cout << std::get<0>(value_tuple).get_str() << ' ';
-    std::cout << std::get<1>(value_tuple).get_str() << ' ';
-    std::cout << std::get<2>(value_tuple).get_str() << std::endl;
-    std::cout << "STRATEGIES: " << std::endl;
-    std::cout << MOVES[a]->id << ", " << MOVES[b]->id << std::endl;
-    std::cout << MOVES[c]->id << ", " << MOVES[d]->id << std::endl;
-    std::cout << std::endl;
+    const auto value_tuple = values4.at(best_r * N_MOVES * N_MOVES + best_c);
 
     tables.value_table[hash_state({hp_1, hp_2, false, false})] = std::get<0>(value_tuple);
     tables.value_table[hash_state({hp_1, hp_2, false, true})] = std::get<1>(value_tuple);
@@ -686,15 +699,25 @@ void solve_hp(
     tables.move_table[hash_state({hp_1, hp_2, true, false})][1] = {MOVES[d]};
     tables.move_table[hash_state({hp_1, hp_2, true, true})][0] = {&RECHARGE};
     tables.move_table[hash_state({hp_1, hp_2, true, true})][1] = {&RECHARGE};
+
+    std::cout << "FINAL VALUES" << std::endl;
+    std::cout << std::get<0>(value_tuple).get_str() << ' ';
+    std::cout << std::get<1>(value_tuple).get_str() << ' ';
+    std::cout << std::get<2>(value_tuple).get_str() << std::endl;
+    std::cout << "STRATEGIES: " << std::endl;
+    std::cout << MOVES[a]->id << ", " << MOVES[b]->id << std::endl;
+    std::cout << MOVES[c]->id << ", " << MOVES[d]->id << std::endl;
+    std::cout << std::endl;
 }
 
 int main()
 {
     Solution tables{};
+    std::vector<Branch> branches{};
+    mpq_class value{};
+    // init_tables(tables);
 
-    init_tables(tables);
-
-    for (int hp_1 = MIN_HP; hp_1 <= MAX_HP; ++hp_1)
+    for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
@@ -702,6 +725,15 @@ int main()
             solve_hp(tables, hp_1, hp_2);
         }
     }
+
+    // transitions(
+    //     {182, 182, false, false},
+    //     tables,
+    //     HYPER_BEAM,
+    //     HYPER_BEAM,
+    //     value,
+    //     branches
+    // );
 
     return 0;
 }
