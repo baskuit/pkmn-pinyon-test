@@ -117,30 +117,41 @@ struct State
     int hp_2;
     bool r_1;
     bool r_2;
-
-    // for unordered_map support
-    operator size_t() const
-    {
-        return 0;
-    }
 };
 
-void print(const State &state)
+void print_state(const State &state)
 {
     std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.r_1 << ' ' << state.r_2 << std::endl;
 }
 
-size_t hash(const State &state)
+size_t hash_state(const State &state)
 {
     return 4 * MAX_HP * state.hp_1 + 4 * state.hp_2 + 2 * state.r_1 + state.r_2;
 }
 
+State unhash_state(size_t h)
+{
+    const int m2 = h % 2;
+    h -= m2;
+    h /= 2;
+    const int m1 = h % 2;
+    h -= m1;
+    h /= 2;
+    const int r2 = h % MAX_HP;
+    h -= r2;
+    h /= MAX_HP;
+    const int r1 = h;
+    return {r1, r2, bool{m1}, bool{m2}};
+}
+
+// horrible name and not clear what it does really
 size_t hash_a(const int r1, const int r2, const int m1, const int m2)
 {
     return r1 * 2 * N_MOVES * N_MOVES + r2 * N_MOVES * N_MOVES + m1 * N_MOVES + m2;
 }
 
-std::tuple<int, int, int, int> unhash_a(size_t h)
+std::tuple<int, int, int, int>
+unhash_a(size_t h)
 {
     const int m2 = h % N_MOVES;
     h -= m2;
@@ -159,13 +170,13 @@ struct Branch
 {
     State state;
     // probability of transition
-    mpq_class p;
+    mpq_class prob;
 };
 
 struct Solution
 {
-    std::unordered_map<size_t, mpq_class> value{};
-    std::unordered_map<size_t, std::vector<const Move *>[2]> moves {};
+    std::unordered_map<size_t, mpq_class> value_table{};
+    std::unordered_map<size_t, std::vector<const Move *>[2]> move_table{};
 };
 
 void init_tables(Solution &tables)
@@ -174,60 +185,54 @@ void init_tables(Solution &tables)
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
-            tables.value[hash({hp_1, hp_2, false, false})] = mpq_class{1, 2};
-            tables.value[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
-            tables.value[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
-            tables.value[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
-            tables.moves[hash({hp_1, hp_2, false, false})][0] = {&BODY_SLAM};
-            tables.moves[hash({hp_1, hp_2, false, false})][1] = {&BODY_SLAM};
-            tables.moves[hash({hp_1, hp_2, false, true})][0] = {&BODY_SLAM};
-            tables.moves[hash({hp_1, hp_2, false, true})][1] = {&RECHARGE};
-            tables.moves[hash({hp_1, hp_2, true, false})][0] = {&RECHARGE};
-            tables.moves[hash({hp_1, hp_2, true, false})][1] = {&BODY_SLAM};
-            tables.moves[hash({hp_1, hp_2, true, true})][0] = {&RECHARGE};
-            tables.moves[hash({hp_1, hp_2, true, true})][1] = {&RECHARGE};
+            tables.value_table[hash_state({hp_1, hp_2, false, false})] = mpq_class{1, 2};
+            tables.value_table[hash_state({hp_1, hp_2, false, true})] = mpq_class{511, 512};
+            tables.value_table[hash_state({hp_1, hp_2, true, false})] = mpq_class{1, 512};
+            tables.value_table[hash_state({hp_1, hp_2, true, true})] = mpq_class{1, 2};
+            tables.move_table[hash_state({hp_1, hp_2, false, false})][0] = {&BODY_SLAM};
+            tables.move_table[hash_state({hp_1, hp_2, false, false})][1] = {&BODY_SLAM};
+            tables.move_table[hash_state({hp_1, hp_2, false, true})][0] = {&BODY_SLAM};
+            tables.move_table[hash_state({hp_1, hp_2, false, true})][1] = {&RECHARGE};
+            tables.move_table[hash_state({hp_1, hp_2, true, false})][0] = {&RECHARGE};
+            tables.move_table[hash_state({hp_1, hp_2, true, false})][1] = {&BODY_SLAM};
+            tables.move_table[hash_state({hp_1, hp_2, true, true})][0] = {&RECHARGE};
+            tables.move_table[hash_state({hp_1, hp_2, true, true})][1] = {&RECHARGE};
 
-            // tables.moves[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
-            // tables.moves[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
-            // tables.moves[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
+            // tables.move_table[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
+            // tables.move_table[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
+            // tables.move_table[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
         }
     }
 }
 
 mpq_class lookup_value(
-    const Solution &solution,
+    const Solution &tables,
     const State &state)
 {
+    // asserts since ko_win check should pick these up first
     if (state.hp_1 == 0)
     {
+        assert(false);
         return {0};
     }
     if (state.hp_2 == 0)
     {
+        assert(false);
         return {1};
     }
 
-    // print(state);
     if (state.hp_1 < state.hp_2)
     {
-        size_t h = hash(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
-        mpq_class v = solution.value.at(h);
+        const size_t reverse_hash = hash_state(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
+        mpq_class v = tables.value_table.at(reverse_hash);
         v = mpq_class{1} - v;
         v.canonicalize();
         return v;
     }
     else
     {
-        size_t h = hash(state);
-        // print(state);
-        // std::cout << '2' << std::endl;
-
-        // for (const auto x : solution.value) {
-        //     std::cout << ": " << x.first << std::endl;
-        // }
-        // std::cout << h << std::endl;
-
-        return solution.value.at(h);
+        const size_t h = hash_state(state);
+        return tables.value_table.at(h);
     }
 }
 
@@ -243,6 +248,9 @@ void transitions(
     mpq_class &value,
     std::vector<Branch> &branches)
 {
+    // State hashes in, prob of encountering out
+    // std::unordered_map<size_t, mpq_class> children{};
+
     mpq_class total_prob{0};
 
     for (int i = 0; i < 16; ++i)
@@ -250,65 +258,74 @@ void transitions(
         total_prob.canonicalize();
 
         // iterate over all accuracy and freeze checks
-        int hit_1 = i & 1;
-        int hit_2 = i & 2;
-        int proc_1 = i & 4;
-        int proc_2 = i & 8;
+        const bool hit_1 = i & 1;
+        const bool hit_2 = i & 2;
+        const bool proc_1 = i & 4;
+        const bool proc_2 = i & 8;
 
         // corresponding probs
-        mpq_class acc_1 = hit_1 ? move_1.acc : move_1.one_minus_acc;
-        mpq_class acc_2 = hit_2 ? move_2.acc : move_2.one_minus_acc;
-        mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
-        mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
+        const mpq_class acc_1 = hit_1 ? move_1.acc : move_1.one_minus_acc;
+        const mpq_class acc_2 = hit_2 ? move_2.acc : move_2.one_minus_acc;
+        const mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
+        const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
 
-        mpq_class p = acc_1 * acc_2 * frz_1 * frz_2;
-        p.canonicalize();
+        mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
+        hit_proc_prob.canonicalize();
 
-        bool p1_frz_win = hit_1 && proc_1 && move_1.may_freeze;
-        bool p2_frz_win = hit_2 && proc_2 && move_2.may_freeze;
+        if (hit_proc_prob == mpq_class{0})
+        {
+            // Don't need to check rolls if we are assuming freeze on move that can't freeze
+            continue;
+        }
+
+        const bool p1_frz_win = move_1.may_freeze && hit_1 && proc_1;
+        const bool p2_frz_win = move_2.may_freeze && hit_2 && proc_2;
 
         // check if frz win
         if (p1_frz_win)
         {
             // should not be affected by the speed tie stuff?
-            total_prob += p;
-
             if (p2_frz_win)
             {
                 // speed tie, only modify p so that value is correct
-                p *= mpq_class{1, 2};
-                p.canonicalize();
-                value += p;
+                value += hit_proc_prob * mpq_class{1, 2};
                 value.canonicalize();
+                // TODO I think I messed this up
+                total_prob += hit_proc_prob * mpq_class{1, 2};
+                // children[-1] += hit_proc_prob * mpq_class{1, 2};
+                // children[-2] += hit_proc_prob * mpq_class{1, 2};
             }
             else
             {
-                total_prob += p;
-
-                value += p;
+                value += hit_proc_prob;
                 value.canonicalize();
+
+                total_prob += hit_proc_prob;
+                // children[-1] += hit_proc_prob;
             }
             continue;
         }
         if (p2_frz_win)
         {
             // p1 loss, add 0...
+            total_prob += hit_proc_prob;
+            // children[-2] += hit_proc_prob;
             continue;
         }
 
         for (int j = 0; j < 4; ++j)
         {
             // iterate over a crit checks
-            const int crit_1 = j & 1;
-            const int crit_2 = j & 2;
+            const bool crit_1 = j & 1;
+            const bool crit_2 = j & 2;
 
             const mpq_class &crit_p_1 = crit_1 ? CRIT : NO_CRIT;
             const mpq_class &crit_p_2 = crit_2 ? CRIT : NO_CRIT;
-            mpq_class crit_p = p * crit_p_1 * crit_p_2;
-            crit_p.canonicalize();
+            mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
+            crit_prob.canonicalize();
 
-            const std::vector<Roll> &rolls_1 = hit_1 ? (crit_1 ? move_1.rolls : move_1.crit_rolls) : RECHARGE.rolls;
-            const std::vector<Roll> &rolls_2 = hit_2 ? (crit_2 ? move_2.rolls : move_2.crit_rolls) : RECHARGE.rolls;
+            const std::vector<Roll> &rolls_1 = hit_1 ? (crit_1 ? move_1.crit_rolls : move_1.rolls) : RECHARGE.rolls;
+            const std::vector<Roll> &rolls_2 = hit_2 ? (crit_2 ? move_2.crit_rolls : move_2.rolls) : RECHARGE.rolls;
 
             for (const Roll &roll_1 : rolls_1)
             {
@@ -317,61 +334,75 @@ void transitions(
                     // iterate over all damage rolls
                     mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
                     roll_probs.canonicalize();
-                    mpq_class q = crit_p * roll_probs;
-                    q.canonicalize();
+                    mpq_class crit_roll_prob = crit_prob * roll_probs;
+                    crit_roll_prob.canonicalize();
 
-                    total_prob += q;
+                    total_prob += crit_roll_prob;
 
-                    int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
-                    int post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
+                    const int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
+                    const int post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
 
-                    bool p1_ko_win = (post_hp_2 == 0);
-                    bool p2_ko_win = (post_hp_1 == 0);
+                    // std::cout << "ROLLS: " << roll_1.dmg << " (crit): " << crit_1 << " ; " << roll_2.dmg << " (crit): " << crit_2 << std::endl;
+                    // std::cout << "HP: " << post_hp_1 << ' ' << post_hp_2 << std::endl;
+
+                    const bool p1_ko_win = (post_hp_2 == 0);
+                    const bool p2_ko_win = (post_hp_1 == 0);
 
                     if (p1_ko_win)
                     {
                         // don't need to increm
                         if (p2_ko_win)
                         {
-                            q *= mpq_class{1, 2};
-                            q.canonicalize();
-                            value += q;
+                            value += crit_roll_prob * mpq_class{1, 2};
                             value.canonicalize();
+
+                            // children[-1] += crit_roll_prob * mpq_class{1, 2};
+                            // children[-2] += crit_roll_prob * mpq_class{1, 2};
+                            // children[-1].canonicalize();
+                            // children[-2].canonicalize();
                         }
                         else
                         {
-                            value += q;
+                            value += crit_roll_prob;
                             value.canonicalize();
+
+                            // children[-1] += crit_roll_prob;
+                            // children[-1].canonicalize();
                         }
                         continue;
                     }
                     if (p2_ko_win)
                     {
                         // p1 loss, add 0...
+                        // children[-2] += crit_roll_prob;
+                        // children[-2].canonicalize();
                         continue;
                     }
 
-                    const State child{post_hp_1, post_hp_2, move_1.must_recharge, move_2.must_recharge};
-                    const size_t child_hash = hash(child);
+                    const State child{post_hp_1, post_hp_2, move_1.must_recharge && hit_1, move_2.must_recharge && hit_2};
+                    const size_t child_hash = hash_state(child);
+
+                    // children[child_hash] += crit_roll_prob;
+                    // children[child_hash].canonicalize();
+
                     if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
                     {
-                        branches.push_back({child, q});
+                        branches.push_back({child, crit_roll_prob});
                     }
                     else
                     {
                         // child state has less hp, lookup and increment
-                        // print(state);
-                        // std::cout << '!' << std::endl;
-                        mpq_class temp = q * lookup_value(tables, child);
-                        temp.canonicalize();
-                        value += temp;
+                        mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
+                        weighted_solved_value.canonicalize();
+                        value += weighted_solved_value;
                         value.canonicalize();
                     }
                 }
             }
         }
     }
-    // std::cout << "Transition total probs: " << total_prob.get_str() << std::endl;
+
+    assert(total_prob == mpq_class{1});
 }
 
 void solve_hp(
@@ -382,11 +413,8 @@ void solve_hp(
     std::unordered_map<
         size_t,
         std::tuple<mpq_class, mpq_class, State>>
-        mem{};
+        memo{};
     // what simple equation does a joint action applied to a state induce?
-
-    int first_count = 0;
-    int second_count = 0;
 
     for (int m1 = 0; m1 < N_MOVES_WITH_RECHARGE; ++m1)
     {
@@ -394,9 +422,6 @@ void solve_hp(
         for (int m2 = 0; m2 < N_MOVES_WITH_RECHARGE; ++m2)
         {
             const Move *move_2 = MOVES_WITH_RECHARGE[m2];
-
-            // std::cout << std::endl;
-            // std::cout << "Move 1: " << move_1->id << " Move 2: " << move_2->id << std::endl;
 
             for (int i = 0; i < 4; ++i)
             {
@@ -422,28 +447,17 @@ void solve_hp(
                 transitions(state, tables, *move_1, *move_2, value, branches);
 
                 mpq_class total_branch_prob{0};
-                const State child_state = branches[0].state;
+                const State &child_state = branches[0].state;
                 for (const Branch &branch : branches)
                 {
-                    total_branch_prob += branch.p;
+                    total_branch_prob += branch.prob;
                     total_branch_prob.canonicalize();
                     assert(child_state.r_1 == branch.state.r_1 && child_state.r_2 == branch.state.r_2);
                 }
-
-                // This assert fails due to recharge
-                // miss = 0 recharge
-                // std::cout << "MISS: " << miss.get_str() << ' ' << total_branch_prob.get_str() << std::endl;
                 assert(miss == total_branch_prob);
 
-                mem[hash_] = {value, total_branch_prob, child_state};
-
-                ++first_count;
-
-                // assert(total_branch_prob == miss);
-
-                // x = value + (miss) * z
-                // x =
-                // where y is already known, but z is a peer state
+                // Add computed date to memo
+                memo[hash_] = {value, total_branch_prob, child_state};
             }
         }
     }
@@ -452,18 +466,14 @@ void solve_hp(
     // and derive a system of simple equations for the value of states given those pure strategies
     // then solve and store in NE matrix
 
-    // Commented out for now
-
-    // using Strategy = Move *[4];
-
-    // every possible joint strategy
-
     mpq_class p1_value_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES];
+    mpq_class p1_value_matrix_full[N_MOVES * N_MOVES][N_MOVES * N_MOVES][3];
 
     std::unordered_map<size_t,
                        std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>>
         values4{};
 
+    // every possible joint strategy
     for (int i = 0; i < N_MOVES * N_MOVES; ++i)
     {
 
@@ -488,10 +498,10 @@ void solve_hp(
             const size_t h10 = hash_a(1, 0, N_MOVES, d);
             const size_t h11 = hash_a(1, 1, N_MOVES, N_MOVES);
 
-            const auto w = mem.at(h00);
-            const auto x = mem.at(h01);
-            const auto y = mem.at(h10);
-            const auto z = mem.at(h11);
+            const auto w = memo.at(h00);
+            const auto x = memo.at(h01);
+            const auto y = memo.at(h10);
+            const auto z = memo.at(h11);
 
             mpq_class y00 = std::get<0>(w);
             mpq_class y01 = std::get<0>(x);
@@ -514,9 +524,7 @@ void solve_hp(
             coefficients(1, 2 * next_state01.r_1 + next_state01.r_2) -= p01;
             coefficients(2, 2 * next_state10.r_1 + next_state10.r_2) -= p10;
             coefficients(3, 2 * next_state11.r_1 + next_state11.r_2) -= p11;
-
             // printMatrix(coefficients);
-            // return;
 
             Eigen::Matrix<mpq_class, 4, 1> constants;
             constants << y00, y01, y10, y11;
@@ -552,9 +560,14 @@ void solve_hp(
             mpq_class total_p1_value = v00 + v01 + v10 + v11;
             total_p1_value.canonicalize();
             p1_value_matrix[i][j] = total_p1_value;
+
+            p1_value_matrix_full[i][j][0] = v00;
+            p1_value_matrix_full[i][j][1] = v01;
+            p1_value_matrix_full[i][j][2] = v10;
         }
     }
 
+    // // Print joint strategy matrix
     // for (int i = 0; i < N_MOVES * N_MOVES; ++i)
     // {
     //     for (int j = 0; j < N_MOVES * N_MOVES; ++j)
@@ -609,6 +622,42 @@ void solve_hp(
         }
     }
 
+    // assert(min == max);
+
+    if (min != max)
+    {
+        std::cout << "Assertion failed: " << min.get_str() << ' ' << max.get_str() << std::endl;
+        std::cout << best_r << ' ' << best_c << std::endl;
+        for (int r = 0; r < N_MOVES * N_MOVES; ++r)
+        {
+            for (int c = 0; c < N_MOVES * N_MOVES; ++c)
+            {
+                mpq_class x_ = p1_value_matrix_full[r][c][0];
+                mpq_class y_ = p1_value_matrix_full[r][c][1];
+                mpq_class z_ = p1_value_matrix_full[r][c][2];
+
+                std::cout << x_.get_str() << "," << y_.get_str() << "," << z_.get_str() << ' ';
+            }
+            std::cout << std::endl;
+        }
+
+        std::cout << std::endl;
+
+        for (int r = 0; r < N_MOVES * N_MOVES; ++r)
+        {
+            for (int c = 0; c < N_MOVES * N_MOVES; ++c)
+            {
+                mpq_class x_ = p1_value_matrix_full[r][c][0];
+                mpq_class y_ = p1_value_matrix_full[r][c][1];
+                mpq_class z_ = p1_value_matrix_full[r][c][2];
+
+                std::cout << x_.get_d() << "," << y_.get_d() << "," << z_.get_d() << ' ';
+            }
+            std::cout << std::endl;
+        }
+        exit(1);
+    }
+
     const int a = best_r % N_MOVES;
     const int b = best_r / N_MOVES;
     const int c = best_c % N_MOVES;
@@ -624,58 +673,19 @@ void solve_hp(
     std::cout << MOVES[c]->id << ", " << MOVES[d]->id << std::endl;
     std::cout << std::endl;
 
+    tables.value_table[hash_state({hp_1, hp_2, false, false})] = std::get<0>(value_tuple);
+    tables.value_table[hash_state({hp_1, hp_2, false, true})] = std::get<1>(value_tuple);
+    tables.value_table[hash_state({hp_1, hp_2, true, false})] = std::get<2>(value_tuple);
+    tables.value_table[hash_state({hp_1, hp_2, true, true})] = std::get<3>(value_tuple);
 
-    tables.value[hash({hp_1, hp_2, false, false})] = std::get<0>(value_tuple);
-    tables.value[hash({hp_1, hp_2, false, true})] = std::get<1>(value_tuple);
-    tables.value[hash({hp_1, hp_2, true, false})] = std::get<2>(value_tuple);
-    tables.value[hash({hp_1, hp_2, true, true})] = std::get<3>(value_tuple);
-
-    // if (hp_1 == 96 && hp_2 == 9) {
-    //     std::cout << "FUCKING SOLVED ALREADY" << std::endl;
-    // }
-
-    tables.moves[hash({hp_1, hp_2, false, false})][0] = {MOVES[a]};
-    tables.moves[hash({hp_1, hp_2, false, false})][1] = {MOVES[c]};
-    tables.moves[hash({hp_1, hp_2, false, true})][0] = {MOVES[b]};
-    tables.moves[hash({hp_1, hp_2, false, true})][1] = {&RECHARGE};
-    tables.moves[hash({hp_1, hp_2, true, false})][0] = {&RECHARGE};
-    tables.moves[hash({hp_1, hp_2, true, false})][1] = {MOVES[d]};
-    tables.moves[hash({hp_1, hp_2, true, true})][0] = {&RECHARGE};
-    tables.moves[hash({hp_1, hp_2, true, true})][1] = {&RECHARGE};
-}
-
-void old_test()
-{
-    State init{1, 1, true, false};
-
-    std::vector<Branch> branches{};
-
-    mpq_class value{};
-
-    Solution tables{};
-
-    transitions(
-        init,
-        tables,
-        RECHARGE,
-        BODY_SLAM,
-        value,
-        branches);
-
-    std::cout << "VALUE: " << value.get_str() << " = " << value.get_d() << std::endl;
-
-    std::cout << "NEXT STATES: ";
-    print(branches[0].state);
-
-    mpq_class total_prob{0};
-
-    for (const auto x : branches)
-    {
-        // print(x.state);
-        total_prob += x.p;
-        // total_prob.canonicalize();
-    }
-    std::cout << "NEXT STATE PROB: " << total_prob.get_str() << " = " << total_prob.get_d() << std::endl;
+    tables.move_table[hash_state({hp_1, hp_2, false, false})][0] = {MOVES[a]};
+    tables.move_table[hash_state({hp_1, hp_2, false, false})][1] = {MOVES[c]};
+    tables.move_table[hash_state({hp_1, hp_2, false, true})][0] = {MOVES[b]};
+    tables.move_table[hash_state({hp_1, hp_2, false, true})][1] = {&RECHARGE};
+    tables.move_table[hash_state({hp_1, hp_2, true, false})][0] = {&RECHARGE};
+    tables.move_table[hash_state({hp_1, hp_2, true, false})][1] = {MOVES[d]};
+    tables.move_table[hash_state({hp_1, hp_2, true, true})][0] = {&RECHARGE};
+    tables.move_table[hash_state({hp_1, hp_2, true, true})][1] = {&RECHARGE};
 }
 
 int main()
@@ -692,8 +702,6 @@ int main()
             solve_hp(tables, hp_1, hp_2);
         }
     }
-
-    // old_test();
 
     return 0;
 }
