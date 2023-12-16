@@ -427,10 +427,14 @@ unhash_a(size_t h)
 }
 
 template <size_t r, size_t c, size_t n>
-void print_solved_value_matrix(const rat_matrix<r, c, n> &matrix) {
-    for (int i = 0; i < r; ++i) {
-        for (int j = 0; j < c; ++j) {
-            for (int k = 0; k < n; ++k) {
+void print_solved_value_matrix(const rat_matrix<r, c, n> &matrix)
+{
+    for (int i = 0; i < r; ++i)
+    {
+        for (int j = 0; j < c; ++j)
+        {
+            for (int k = 0; k < n; ++k)
+            {
                 std::cout << matrix[i][j][k].get_d() << ' ';
             }
             std::cout << '\t';
@@ -504,7 +508,7 @@ void solve_hp(
     // now iterate over every possible pure strategy over the equal hp states
     // and derive a system of simple equations for the value of states given those pure strategies
     // then solve and store in NE matrix
-    rat_matrix<4, 4, 1> p1_value_matrix{};
+    rat_matrix<4, 4, 1> solved_value_sum_matrix{};
     rat_matrix<4, 4, 3> solved_value_matrix{};
 
     // Solved value once the NE over the 4 state same-HP subgame has been found
@@ -613,7 +617,7 @@ void solve_hp(
             // hack
             mpq_class total_p1_value = value00 + value01 + value10 + value11;
             total_p1_value.canonicalize();
-            p1_value_matrix[row_strat][col_strat][0] = total_p1_value;
+            solved_value_sum_matrix[row_strat][col_strat][0] = total_p1_value;
 
             solved_value_matrix[row_strat][col_strat][0] = value00;
             solved_value_matrix[row_strat][col_strat][1] = value01;
@@ -622,29 +626,8 @@ void solve_hp(
     }
 
     // Debug asserts
-    if ((hp_1 == hp_2) && false)
+    if (hp_1 == hp_2)
     {
-        // Checks are only valid if both mons have the same HP
-        std::cout << "NO RECHARGE STRAT MATRIX: " << std::endl;
-        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
-        {
-            for (int j = 0; j < N_MOVES * N_MOVES; ++j)
-            {
-                std::cout << solved_value_matrix[i][j][0].get_str() << ' ';
-            }
-            std::cout << std::endl;
-        }
-
-        std::cout << "DITTO (float): " << std::endl;
-        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
-        {
-            for (int j = 0; j < N_MOVES * N_MOVES; ++j)
-            {
-                std::cout << solved_value_matrix[i][j][0].get_d() << ' ';
-            }
-            std::cout << std::endl;
-        }
-
         // Switching stategies should flip expected score
         for (int i = 0; i < N_MOVES * N_MOVES; ++i)
         {
@@ -656,6 +639,16 @@ void solve_hp(
                 c.canonicalize();
                 assert(c == mpq_class{1});
             }
+        }
+
+        // So should switchin recharge when they have the same strats
+        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+        {
+            const mpq_class a = solved_value_matrix[i][i][1];
+            const mpq_class b = solved_value_matrix[i][i][2];
+            mpq_class c = a + b;
+            c.canonicalize();
+            assert(c == mpq_class{1});
         }
     }
 
@@ -670,7 +663,7 @@ void solve_hp(
 
             for (int c = 0; c < N_MOVES * N_MOVES; ++c)
             {
-                mpq_class x = p1_value_matrix[row_strat][c][0];
+                mpq_class x = solved_value_sum_matrix[row_strat][c][0];
                 if (x < min_)
                 {
                     min_ = x;
@@ -690,7 +683,7 @@ void solve_hp(
 
             for (int r = 0; r < N_MOVES * N_MOVES; ++r)
             {
-                mpq_class x = p1_value_matrix[r][col_strat][0];
+                mpq_class x = solved_value_sum_matrix[r][col_strat][0];
                 if (x > max_)
                 {
                     max_ = x;
@@ -706,7 +699,7 @@ void solve_hp(
     };
 
     print_solved_value_matrix<4, 4, 3>(solved_value_matrix);
-    print_solved_value_matrix<4, 4, 1>(p1_value_matrix);
+    print_solved_value_matrix<4, 4, 1>(solved_value_sum_matrix);
 
     std::cout << "debug best strats: " << best_r << ' ' << best_c << std::endl;
 
