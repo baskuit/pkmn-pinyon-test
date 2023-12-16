@@ -101,16 +101,37 @@ const Move RECHARGE{
 
 const std::vector<const Move *> MOVES{
     &BODY_SLAM,
-    // &BLIZZARD,
-    &HYPER_BEAM};
+    &HYPER_BEAM
+    // &BLIZZARD
+    };
 const int N_MOVES = MOVES.size();
 
 const std::vector<const Move *> MOVES_WITH_RECHARGE{
     &BODY_SLAM,
-    // &BLIZZARD,
     &HYPER_BEAM,
+    // &BLIZZARD,
     &RECHARGE};
 const int N_MOVES_WITH_RECHARGE = MOVES_WITH_RECHARGE.size();
+
+// assert rolls are 'correct'
+void move_rolls_assert()
+{
+    for (const Move *move : MOVES)
+    {
+        int a = 0;
+        int b = 0;
+        for (const auto roll : move->rolls)
+        {
+            a += roll.n;
+        }
+        for (const auto roll : move->crit_rolls)
+        {
+            b += roll.n;
+        }
+        assert(a == 39);
+        assert(b == 39);
+    }
+}
 
 struct State
 {
@@ -125,11 +146,6 @@ void print_state(const State &state)
     std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.r_1 << ' ' << state.r_2 << std::endl;
 }
 
-size_t hash_state(const State &state)
-{
-    return 4 * MAX_HP * state.hp_1 + 4 * state.hp_2 + 2 * state.r_1 + state.r_2;
-}
-
 State unhash_state(size_t h)
 {
     const int m2 = h % 2;
@@ -142,7 +158,18 @@ State unhash_state(size_t h)
     h -= r2;
     h /= MAX_HP;
     const int r1 = h;
-    return {r1, r2, static_cast<bool>(m1), static_cast<bool>(m2)};
+    return {r1 + 1, r2 + 1, static_cast<bool>(m1), static_cast<bool>(m2)};
+}
+
+size_t hash_state(const State &state)
+{
+    size_t hash = 4 * MAX_HP * (state.hp_1 - 1) + 4 * (state.hp_2 - 1) + 2 * state.r_1 + state.r_2;
+    const State copy = unhash_state(hash);
+    assert(state.hp_1 == copy.hp_1);
+    assert(state.hp_2 == copy.hp_2);
+    assert(state.r_1 == copy.r_1);
+    assert(state.r_2 == copy.r_2);
+    return hash;
 }
 
 struct Branch
@@ -176,10 +203,6 @@ void init_tables(Solution &tables)
             tables.move_table[hash_state({hp_1, hp_2, true, false})][1] = {&BODY_SLAM};
             tables.move_table[hash_state({hp_1, hp_2, true, true})][0] = {&RECHARGE};
             tables.move_table[hash_state({hp_1, hp_2, true, true})][1] = {&RECHARGE};
-
-            // tables.move_table[hash({hp_1, hp_2, false, true})] = mpq_class{511, 512};
-            // tables.move_table[hash({hp_1, hp_2, true, false})] = mpq_class{1, 512};
-            // tables.move_table[hash({hp_1, hp_2, true, true})] = mpq_class{1, 2};
         }
     }
 }
@@ -366,11 +389,13 @@ void transitions(
         }
     }
 
-    // for (const auto &pair : children) {
+    // for (const auto &pair : children)
+    // {
     //     const State child = unhash_state(pair.first);
     //     std::cout << "STATE: ";
     //     print_state(child);
-    //     std::cout << pair.second.get_d() << std::endl << std::endl;
+    //     std::cout << pair.second.get_d() << " = " << pair.second.get_str() << std::endl
+    //               << std::endl;
     // }
 
     assert(total_prob == mpq_class{1});
@@ -407,11 +432,12 @@ void solve_hp(
         size_t,
         std::tuple<mpq_class, mpq_class, State>>
         memo{};
+
+    std::tuple < mpq_class, mpq_class, State >> memo_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES][2][2];
+
     // given (hp,) recharge states and joint actions,
     // what is the data from the transitions function?
-
     // That is, what is the weighted solved values, total branch prob, and unique state?
-
     for (int m1 = 0; m1 < N_MOVES_WITH_RECHARGE; ++m1)
     {
         const Move *move_1 = MOVES_WITH_RECHARGE[m1];
@@ -438,7 +464,7 @@ void solve_hp(
                 std::vector<Branch> branches{};
                 mpq_class value{0};
                 const State state{hp_1, hp_2, recharge_1, recharge_2};
-                const size_t hash_ = hash_a(recharge_1, recharge_2, m1, m2);
+                const size_t hash = hash_a(recharge_1, recharge_2, m1, m2);
 
                 transitions(state, tables, *move_1, *move_2, value, branches);
 
@@ -453,7 +479,7 @@ void solve_hp(
                 assert(miss == total_branch_prob);
 
                 // Add computed date to memo
-                memo[hash_] = {value, total_branch_prob, unique_child_state};
+                memo[hash] = {value, total_branch_prob, unique_child_state};
             }
         }
     }
@@ -462,12 +488,13 @@ void solve_hp(
     // and derive a system of simple equations for the value of states given those pure strategies
     // then solve and store in NE matrix
     mpq_class p1_value_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES];
-    mpq_class p1_value_matrix_full[N_MOVES * N_MOVES][N_MOVES * N_MOVES][3];
+    mpq_class solved_value_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES][3];
 
     // Solved value once the NE over the 4 state same-HP subgame has been found
-    std::unordered_map<size_t,
-                       std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>>
-        values4{};
+    std::unordered_map<
+        size_t,
+        std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>>
+        solved_values{};
 
     // every possible joint strategy
     for (int row_strat = 0; row_strat < N_MOVES * N_MOVES; ++row_strat)
@@ -503,16 +530,16 @@ void solve_hp(
                 const auto y = memo.at(hash10);
                 const auto z = memo.at(hash11);
 
-                mpq_class y00 = std::get<0>(w);
-                mpq_class y01 = std::get<0>(x);
-                mpq_class y10 = std::get<0>(y);
-                mpq_class y11 = std::get<0>(z);
+                const mpq_class y00 = std::get<0>(w);
+                const mpq_class y01 = std::get<0>(x);
+                const mpq_class y10 = std::get<0>(y);
+                const mpq_class y11 = std::get<0>(z);
                 assert(y11 == mpq_class{0});
 
-                mpq_class p00 = std::get<1>(w);
-                mpq_class p01 = std::get<1>(x);
-                mpq_class p10 = std::get<1>(y);
-                mpq_class p11 = std::get<1>(z);
+                const mpq_class p00 = std::get<1>(w);
+                const mpq_class p01 = std::get<1>(x);
+                const mpq_class p10 = std::get<1>(y);
+                const mpq_class p11 = std::get<1>(z);
                 assert(p11 == mpq_class{1});
 
                 const State &next_state00 = std::get<2>(w);
@@ -524,13 +551,15 @@ void solve_hp(
                 coefficients(1, 2 * next_state01.r_1 + next_state01.r_2) -= p01;
                 coefficients(2, 2 * next_state10.r_1 + next_state10.r_2) -= p10;
                 coefficients(3, 2 * next_state11.r_1 + next_state11.r_2) -= p11;
-                // printMatrix(coefficients);
 
                 Eigen::Matrix<mpq_class, 4, 1> constants;
                 constants << y00, y01, y10, y11;
 
                 // Perform LU decomposition
                 Eigen::FullPivLU<Eigen::Matrix<mpq_class, 4, 4>> lu(coefficients);
+
+                // Solution is unique
+                assert(lu.determinant() != mpq_class{0});
 
                 // Solve the system of linear equations using LU decomposition
                 // v00 is value of the state {hp1, hp2, false, false}, etc
@@ -547,54 +576,65 @@ void solve_hp(
                 value11.canonicalize();
 
                 // Print linear system for dubugging
-                // std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
-                // std::cout << "MATRIX:" << std::endl;
-                // printMatrix<4, 4>(coefficients);
-                // std::cout << "CONSTANTS:" << std::endl;
-                // printMatrix<4, 1>(constants);
-                // std::cout << std::endl;
+                if (hp_1 == 167 && hp_2 == 167 && false)
+                {
+                    std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
+                    std::cout << "MATRIX:" << std::endl;
+                    printMatrix<4, 4>(coefficients);
+                    std::cout << "CONSTANTS:" << std::endl;
+                    printMatrix<4, 1>(constants);
+                    std::cout << std::endl;
+                }
             };
 
             // Store solved values in joint strategy matrices
-            std::tuple<mpq_class, mpq_class, mpq_class, mpq_class>
-                value_tuple = {value00, value01, value10, value11};
-
-            values4[row_strat * N_MOVES * N_MOVES + col_strat] = value_tuple;
+            solved_values[row_strat * N_MOVES * N_MOVES + col_strat] = {value00, value01, value10, value11};
 
             // hack
             mpq_class total_p1_value = value00 + value01 + value10 + value11;
             total_p1_value.canonicalize();
-            p1_value_matrix[row_strat][col_strat] = total_p1_value;
 
-            p1_value_matrix_full[row_strat][col_strat][0] = value00;
-            p1_value_matrix_full[row_strat][col_strat][1] = value01;
-            p1_value_matrix_full[row_strat][col_strat][2] = value10;
+            solved_value_matrix[row_strat][col_strat][0] = value00;
+            solved_value_matrix[row_strat][col_strat][1] = value01;
+            solved_value_matrix[row_strat][col_strat][2] = value10;
         }
     }
 
-    for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+    // Debug asserts
+    if ((hp_1 == hp_2) && false)
     {
-        for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+        // Checks are only valid if both mons have the same HP
+        std::cout << "NO RECHARGE STRAT MATRIX: " << std::endl;
+        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
         {
-            std::cout << p1_value_matrix_full[i][j][0].get_str() << ' ';
+            for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+            {
+                std::cout << solved_value_matrix[i][j][0].get_str() << ' ';
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
-    }
 
-    // If both players use the same strategy from {hp1, hp2, 0, 0} then the value should be 1/2
-    for (int i = 0; i < N_MOVES * N_MOVES; ++i)
-    {
-        const bool diag_check = (p1_value_matrix_full[i][i][0] == mpq_class{1, 2});
-        assert(diag_check);
-    }
-    // Switching stategies should flip expected score
-    for (int i = 0; i < N_MOVES * N_MOVES; ++i) {
-        for (int j = 0; j < N_MOVES * N_MOVES; ++j) {
-            const mpq_class a = p1_value_matrix_full[i][j][0];
-            const mpq_class b = p1_value_matrix_full[j][i][0];
-            mpq_class c = a + b;
-            c.canonicalize();
-            assert(c == mpq_class{1});
+        std::cout << "DITTO (float): " << std::endl;
+        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+        {
+            for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+            {
+                std::cout << solved_value_matrix[i][j][0].get_d() << ' ';
+            }
+            std::cout << std::endl;
+        }
+
+        // Switching stategies should flip expected score
+        for (int i = 0; i < N_MOVES * N_MOVES; ++i)
+        {
+            for (int j = 0; j < N_MOVES * N_MOVES; ++j)
+            {
+                const mpq_class a = solved_value_matrix[i][j][0];
+                const mpq_class b = solved_value_matrix[j][i][0];
+                mpq_class c = a + b;
+                c.canonicalize();
+                assert(c == mpq_class{1});
+            }
         }
     }
 
@@ -644,47 +684,30 @@ void solve_hp(
         }
     };
 
-    // assert(min == max);
-    if (min != max)
+    // assert that we actually found a NE - FINALLY
     {
-        std::cout << "Assertion failed: " << min.get_str() << ' ' << max.get_str() << std::endl;
-        std::cout << best_r << ' ' << best_c << std::endl;
-        for (int r = 0; r < N_MOVES * N_MOVES; ++r)
+        for (int col_strat = 0; col_strat < N_MOVES * N_MOVES; ++col_strat)
         {
-            for (int c = 0; c < N_MOVES * N_MOVES; ++c)
-            {
-                mpq_class x_ = p1_value_matrix_full[r][c][0];
-                mpq_class y_ = p1_value_matrix_full[r][c][1];
-                mpq_class z_ = p1_value_matrix_full[r][c][2];
-
-                std::cout << x_.get_str() << "," << y_.get_str() << "," << z_.get_str() << ' ';
-            }
-            std::cout << std::endl;
+            // p2 can't improve on best_c
+            assert(solved_value_matrix[best_r][col_strat][0] >= solved_value_matrix[best_r][best_c][0]);
+            assert(solved_value_matrix[best_r][col_strat][1] >= solved_value_matrix[best_r][best_c][1]);
+            assert(solved_value_matrix[best_r][col_strat][2] >= solved_value_matrix[best_r][best_c][2]);
         }
-
-        std::cout << std::endl;
-
-        for (int r = 0; r < N_MOVES * N_MOVES; ++r)
+        for (int row_strat = 0; row_strat < N_MOVES * N_MOVES; ++row_strat)
         {
-            for (int c = 0; c < N_MOVES * N_MOVES; ++c)
-            {
-                mpq_class x_ = p1_value_matrix_full[r][c][0];
-                mpq_class y_ = p1_value_matrix_full[r][c][1];
-                mpq_class z_ = p1_value_matrix_full[r][c][2];
-
-                std::cout << x_.get_d() << "," << y_.get_d() << "," << z_.get_d() << ' ';
-            }
-            std::cout << std::endl;
+            // p1 can't improve on best_r
+            assert(solved_value_matrix[row_strat][best_c][0] <= solved_value_matrix[best_r][best_c][0]);
+            assert(solved_value_matrix[row_strat][best_c][1] <= solved_value_matrix[best_r][best_c][1]);
+            assert(solved_value_matrix[row_strat][best_c][2] <= solved_value_matrix[best_r][best_c][2]);
         }
-        exit(1);
-    }
+    };
 
     // Answer found, adding to table
     const int a = best_r % N_MOVES;
     const int b = best_r / N_MOVES;
     const int c = best_c % N_MOVES;
     const int d = best_c / N_MOVES;
-    const auto value_tuple = values4.at(best_r * N_MOVES * N_MOVES + best_c);
+    const auto value_tuple = solved_values.at(best_r * N_MOVES * N_MOVES + best_c);
 
     tables.value_table[hash_state({hp_1, hp_2, false, false})] = std::get<0>(value_tuple);
     tables.value_table[hash_state({hp_1, hp_2, false, true})] = std::get<1>(value_tuple);
@@ -712,9 +735,11 @@ void solve_hp(
 
 int main()
 {
+    move_rolls_assert();
+
     Solution tables{};
     std::vector<Branch> branches{};
-    mpq_class value{};
+    mpq_class value{0};
     // init_tables(tables);
 
     for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
@@ -727,13 +752,12 @@ int main()
     }
 
     // transitions(
-    //     {182, 182, false, false},
+    //     {1, 167, false, true},
     //     tables,
-    //     HYPER_BEAM,
-    //     HYPER_BEAM,
+    //     BODY_SLAM,
+    //     RECHARGE,
     //     value,
-    //     branches
-    // );
+    //     branches);
 
     return 0;
 }
