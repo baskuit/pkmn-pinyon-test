@@ -216,7 +216,7 @@ mpq_class lookup_value(
 {
     if (state.hp_1 < state.hp_2)
     {
-        const size_t reverse_hash = hash_state(State{state.hp_2, state.hp_1, state.r_2, state.r_2});
+        const size_t reverse_hash = hash_state(State{state.hp_2, state.hp_1, state.r_2, state.r_1});
         mpq_class v = tables.value_table.at(reverse_hash);
         v = mpq_class{1} - v;
         v.canonicalize();
@@ -224,8 +224,8 @@ mpq_class lookup_value(
     }
     else
     {
-        const size_t h = hash_state(state);
-        return tables.value_table.at(h);
+        const size_t hash = hash_state(state);
+        return tables.value_table.at(hash);
     }
 }
 
@@ -239,7 +239,8 @@ void transitions(
     const Move &move_1,
     const Move &move_2,
     mpq_class &value,
-    std::vector<Branch> &branches)
+    std::vector<Branch> &branches,
+    const bool debug = false)
 {
     // Debug only
     // State hashes in, prob of encountering out
@@ -267,11 +268,11 @@ void transitions(
         mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
         hit_proc_prob.canonicalize();
 
-        if (hit_proc_prob == mpq_class{0})
-        {
-            // Don't need to check rolls if we are assuming freeze on move that can't freeze
-            continue;
-        }
+        // if (hit_proc_prob == mpq_class{0})
+        // {
+        //     // Don't need to check rolls if we are assuming freeze on move that can't freeze
+        //     continue;
+        // }
 
         const bool p1_frz_win = move_1.may_freeze && hit_1 && proc_1;
         const bool p2_frz_win = move_2.may_freeze && hit_2 && proc_2;
@@ -383,54 +384,40 @@ void transitions(
                     else
                     {
                         // child state has less hp, lookup and increment
-                        mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
-                        weighted_solved_value.canonicalize();
-                        value += weighted_solved_value;
+                        if (!debug)
+                        {
+                            mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
+                            weighted_solved_value.canonicalize();
+                            value += weighted_solved_value;
+                        }
                     }
                 }
             }
         }
     }
 
-    if (state.hp_1 == 167 && state.hp_2 == 167 && move_1.must_recharge && move_2.must_recharge)
+    if (debug)
     {
+        mpq_class child_prob{0};
         for (const auto &pair : children)
         {
+            child_prob += pair.second;
+            child_prob.canonicalize();
+
             const State child = unhash_state(pair.first);
             std::cout << "STATE: ";
             print_state(child);
             std::cout << pair.second.get_d() << " = " << pair.second.get_str() << std::endl;
             if (tables.value_table.find(pair.first) != tables.value_table.end())
             {
-                std::cout << "TABEL VALUE: " << tables.value_table.at(pair.first).get_str() << " = " << tables.value_table.at(pair.first).get_d() << std::endl;
+                std::cout << "TABLE VALUE: " << tables.value_table.at(pair.first).get_str() << " = " << tables.value_table.at(pair.first).get_d() << std::endl;
             }
             std::cout << std::endl;
         }
+        assert(child_prob == mpq_class{1});
     }
 
     assert(total_prob == mpq_class{1});
-}
-
-// horrible name and not clear what it does really
-size_t hash_a(const int r1, const int r2, const int m1, const int m2)
-{
-    return r1 * 2 * N_MOVES * N_MOVES + r2 * N_MOVES * N_MOVES + m1 * N_MOVES + m2;
-}
-
-std::tuple<int, int, int, int>
-unhash_a(size_t h)
-{
-    const int m2 = h % N_MOVES;
-    h -= m2;
-    h /= N_MOVES;
-    const int m1 = h % N_MOVES;
-    h -= m1;
-    h /= N_MOVES;
-    const int r2 = h % 2;
-    h -= r2;
-    h /= 2;
-    const int r1 = h;
-    return {r1, r2, m1, m2};
 }
 
 template <size_t r, size_t c, size_t n>
@@ -455,13 +442,9 @@ void solve_hp(
     const int hp_1,
     const int hp_2)
 {
-    std::unordered_map<
-        size_t,
-        std::tuple<mpq_class, mpq_class, State>>
-        memo{};
-
-    // unused currently, should free me from worrying about hashes
-    std::tuple<mpq_class, mpq_class, State> memo_matrix[N_MOVES * N_MOVES][N_MOVES * N_MOVES][2][2];
+    // value, prob, state
+    std::tuple<mpq_class, mpq_class, State>
+        memo_matrix[N_MOVES_WITH_RECHARGE][N_MOVES_WITH_RECHARGE][2][2];
 
     // given (hp,) recharge states and joint actions,
     // what is the data from the transitions function?
@@ -492,7 +475,6 @@ void solve_hp(
                 std::vector<Branch> branches{};
                 mpq_class value{0};
                 const State state{hp_1, hp_2, recharge_1, recharge_2};
-                const size_t hash = hash_a(recharge_1, recharge_2, m1, m2);
 
                 transitions(state, tables, *move_1, *move_2, value, branches);
 
@@ -506,8 +488,8 @@ void solve_hp(
                 }
                 assert(miss == total_branch_prob);
 
-                // Add computed date to memo
-                memo[hash] = {value, total_branch_prob, unique_child_state};
+                memo_matrix[m1][m2][(int)recharge_1][(int)recharge_2] =
+                    {value, total_branch_prob, unique_child_state};
             }
         }
     }
@@ -533,11 +515,6 @@ void solve_hp(
             Eigen::Matrix<mpq_class, 4, 4>
                 coefficients = Eigen::Matrix<mpq_class, 4, 4>::Identity();
 
-            const size_t hash00 = hash_a(0, 0, a, c);
-            const size_t hash01 = hash_a(0, 1, b, N_MOVES);
-            const size_t hash10 = hash_a(1, 0, N_MOVES, d);
-            const size_t hash11 = hash_a(1, 1, N_MOVES, N_MOVES);
-
             // {value, same hp prob, child state}
 
             mpq_class value00;
@@ -547,10 +524,10 @@ void solve_hp(
 
             // Construct transition matrix and solve for the 4 same-HP states
             {
-                const auto w = memo.at(hash00);
-                const auto x = memo.at(hash01);
-                const auto y = memo.at(hash10);
-                const auto z = memo.at(hash11);
+                const auto w = memo_matrix[a][c][0][0];
+                const auto x = memo_matrix[b][N_MOVES][0][1];
+                const auto y = memo_matrix[N_MOVES][d][1][0];
+                const auto z = memo_matrix[N_MOVES][N_MOVES][1][1];
 
                 const mpq_class y00 = std::get<0>(w);
                 const mpq_class y01 = std::get<0>(x);
@@ -598,14 +575,19 @@ void solve_hp(
                 value11.canonicalize();
 
                 // Print linear system for dubugging
-                if (hp_1 == 167 && hp_2 == 167 && false)
+                if (hp_1 == 167 && hp_2 == 167 && true)
                 {
+                    std::cout << "LETTER MOVES: " << a << ' ' << b << ' ' << c << ' ' << d << std::endl;
                     std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
                     std::cout << "MATRIX:" << std::endl;
                     printMatrix<4, 4>(coefficients);
                     std::cout << "CONSTANTS:" << std::endl;
                     printMatrix<4, 1>(constants);
+                    std::cout << "SOLUTION:" << std::endl;
+                    printMatrix<4, 1>(solution);
                     std::cout << std::endl;
+
+                    exit(1);
                 }
             };
 
@@ -757,6 +739,20 @@ void solve_hp(
     std::cout << std::endl;
 }
 
+void total_solve(
+    Solution &tables,
+    const int starting_hp = MIN_HP + 1)
+{
+    for (int hp_1 = starting_hp; hp_1 <= MAX_HP; ++hp_1)
+    {
+        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        {
+            std::cout << "HP1: " << hp_1 << " HP2: " << hp_2 << std::endl;
+            solve_hp(tables, hp_1, hp_2);
+        }
+    }
+}
+
 int main()
 {
     move_rolls_assert();
@@ -766,22 +762,18 @@ int main()
     mpq_class value{0};
     init_tables(tables);
 
-    for (int hp_1 = MIN_HP + 1; hp_1 <= MAX_HP; ++hp_1)
-    {
-        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
-        {
-            std::cout << "HP1: " << hp_1 << " HP2: " << hp_2 << std::endl;
-            solve_hp(tables, hp_1, hp_2);
-        }
-    }
-
+    // size_t ns =  hash_state({167, 1, 1, 0});
+    // std::cout << '!' << ns << std::endl;
+    total_solve(tables);
+    // tables.value_table[ns] = mpq_class{1, 2};
     // transitions(
     //     {167, 167, false, false},
     //     tables,
     //     HYPER_BEAM,
     //     HYPER_BEAM,
     //     value,
-    //     branches);
-
+    //     branches,
+    //     false);
+    // std::cout << value.get_str() << std::endl;
     return 0;
 }
