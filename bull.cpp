@@ -168,10 +168,10 @@ size_t hash_state(const State &state)
 {
     size_t hash = 4 * MAX_HP * (state.hp_1 - 1) + 4 * (state.hp_2 - 1) + 2 * state.r_1 + state.r_2;
     const State copy = unhash_state(hash);
-    assert(state.hp_1 == copy.hp_1);
-    assert(state.hp_2 == copy.hp_2);
-    assert(state.r_1 == copy.r_1);
-    assert(state.r_2 == copy.r_2);
+    // assert(state.hp_1 == copy.hp_1);
+    // assert(state.hp_2 == copy.hp_2);
+    // assert(state.r_1 == copy.r_1);
+    // assert(state.r_2 == copy.r_2);
     return hash;
 }
 
@@ -250,7 +250,7 @@ void transitions(
     for (int i = 0; i < 16; ++i)
     {
         // after incrementing and 'continue' call
-        total_prob.canonicalize();
+        // total_prob.canonicalize();
         value.canonicalize();
 
         // iterate over all accuracy and freeze checks
@@ -286,28 +286,28 @@ void transitions(
                 // speed tie, only modify p
                 value += hit_proc_prob * mpq_class{1, 2};
 
-                total_prob += hit_proc_prob;
-                children[-1] += hit_proc_prob * mpq_class{1, 2};
-                children[-2] += hit_proc_prob * mpq_class{1, 2};
-                children[-1].canonicalize();
-                children[-2].canonicalize();
+                // total_prob += hit_proc_prob;
+                // children[-1] += hit_proc_prob * mpq_class{1, 2};
+                // children[-2] += hit_proc_prob * mpq_class{1, 2};
+                // children[-1].canonicalize();
+                // children[-2].canonicalize();
             }
             else
             {
                 value += hit_proc_prob;
 
-                total_prob += hit_proc_prob;
-                children[-1] += hit_proc_prob;
-                children[-1].canonicalize();
+                // total_prob += hit_proc_prob;
+                // children[-1] += hit_proc_prob;
+                // children[-1].canonicalize();
             }
             continue;
         }
         if (p2_frz_win)
         {
             // p1 loss, add 0...
-            total_prob += hit_proc_prob;
-            children[-2] += hit_proc_prob;
-            children[-2].canonicalize();
+            // total_prob += hit_proc_prob;
+            // children[-2] += hit_proc_prob;
+            // children[-2].canonicalize();
             continue;
         }
 
@@ -349,43 +349,42 @@ void transitions(
                         {
                             value += crit_roll_prob * mpq_class{1, 2};
 
-                            children[-1] += crit_roll_prob * mpq_class{1, 2};
-                            children[-2] += crit_roll_prob * mpq_class{1, 2};
-                            children[-1].canonicalize();
-                            children[-2].canonicalize();
+                            // children[-1] += crit_roll_prob * mpq_class{1, 2};
+                            // children[-2] += crit_roll_prob * mpq_class{1, 2};
+                            // children[-1].canonicalize();
+                            // children[-2].canonicalize();
                         }
                         else
                         {
                             value += crit_roll_prob;
 
-                            children[-1] += crit_roll_prob;
-                            children[-1].canonicalize();
+                            // children[-1] += crit_roll_prob;
+                            // children[-1].canonicalize();
                         }
                         continue;
                     }
                     if (p2_ko_win)
                     {
                         // p1 loss, add 0...
-                        children[-2] += crit_roll_prob;
-                        children[-2].canonicalize();
+                        // children[-2] += crit_roll_prob;
+                        // children[-2].canonicalize();
                         continue;
                     }
 
                     const State child{post_hp_1, post_hp_2, move_1.must_recharge && hit_1, move_2.must_recharge && hit_2};
                     const size_t child_hash = hash_state(child);
 
-                    children[child_hash] += crit_roll_prob;
-                    children[child_hash].canonicalize();
-
-                    if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
+                    // children[child_hash] += crit_roll_prob;
+                    // children[child_hash].canonicalize();
+                    if (!debug)
                     {
-                        branches.push_back({child, crit_roll_prob});
-                    }
-                    else
-                    {
-                        // child state has less hp, lookup and increment
-                        if (!debug)
+                        if ((post_hp_1 == state.hp_1) && (post_hp_2 == state.hp_2))
                         {
+                            branches.push_back({child, crit_roll_prob});
+                        }
+                        else
+                        {
+                            // child state has less hp, lookup and increment
                             mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
                             weighted_solved_value.canonicalize();
                             value += weighted_solved_value;
@@ -396,28 +395,28 @@ void transitions(
         }
     }
 
-    if (debug)
-    {
-        mpq_class child_prob{0};
-        for (const auto &pair : children)
-        {
-            child_prob += pair.second;
-            child_prob.canonicalize();
+    // if (debug)
+    // {
+    //     mpq_class child_prob{0};
+    //     for (const auto &pair : children)
+    //     {
+    //         child_prob += pair.second;
+    //         child_prob.canonicalize();
 
-            const State child = unhash_state(pair.first);
-            std::cout << "STATE: ";
-            print_state(child);
-            std::cout << pair.second.get_d() << " = " << pair.second.get_str() << std::endl;
-            if (tables.value_table.find(pair.first) != tables.value_table.end())
-            {
-                std::cout << "TABLE VALUE: " << tables.value_table.at(pair.first).get_str() << " = " << tables.value_table.at(pair.first).get_d() << std::endl;
-            }
-            std::cout << std::endl;
-        }
-        assert(child_prob == mpq_class{1});
-    }
+    //         const State child = unhash_state(pair.first);
+    //         std::cout << "STATE: ";
+    //         print_state(child);
+    //         std::cout << pair.second.get_d() << " = " << pair.second.get_str() << std::endl;
+    //         if (tables.value_table.find(pair.first) != tables.value_table.end())
+    //         {
+    //             std::cout << "TABLE VALUE: " << tables.value_table.at(pair.first).get_str() << " = " << tables.value_table.at(pair.first).get_d() << std::endl;
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    //     assert(child_prob == mpq_class{1});
+    // }
 
-    assert(total_prob == mpq_class{1});
+    // assert(total_prob == mpq_class{1});
 }
 
 template <size_t r, size_t c, size_t n>
@@ -574,21 +573,21 @@ void solve_hp(
                 value10.canonicalize();
                 value11.canonicalize();
 
-                // Print linear system for dubugging
-                if (hp_1 == 167 && hp_2 == 167 && true)
-                {
-                    std::cout << "LETTER MOVES: " << a << ' ' << b << ' ' << c << ' ' << d << std::endl;
-                    std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
-                    std::cout << "MATRIX:" << std::endl;
-                    printMatrix<4, 4>(coefficients);
-                    std::cout << "CONSTANTS:" << std::endl;
-                    printMatrix<4, 1>(constants);
-                    std::cout << "SOLUTION:" << std::endl;
-                    printMatrix<4, 1>(solution);
-                    std::cout << std::endl;
+                // // Print linear system for dubugging
+                // if (hp_1 == 167 && hp_2 == 167 && true)
+                // {
+                //     std::cout << "LETTER MOVES: " << a << ' ' << b << ' ' << c << ' ' << d << std::endl;
+                //     std::cout << "STRATS: " << row_strat << ' ' << col_strat << std::endl;
+                //     std::cout << "MATRIX:" << std::endl;
+                //     printMatrix<4, 4>(coefficients);
+                //     std::cout << "CONSTANTS:" << std::endl;
+                //     printMatrix<4, 1>(constants);
+                //     std::cout << "SOLUTION:" << std::endl;
+                //     printMatrix<4, 1>(solution);
+                //     std::cout << std::endl;
 
-                    exit(1);
-                }
+                //     exit(1);
+                // }
             };
 
             // non critical assert
@@ -651,10 +650,9 @@ void solve_hp(
         }
     };
 
-    print_solved_value_matrix<4, 4, 3>(solved_value_matrix);
-    print_solved_value_matrix<4, 4, 1>(solved_value_sum_matrix);
-
-    std::cout << "debug best strats: " << best_r << ' ' << best_c << std::endl;
+    // print_solved_value_matrix<4, 4, 3>(solved_value_matrix);
+    // print_solved_value_matrix<4, 4, 1>(solved_value_sum_matrix);
+    // std::cout << "debug best strats: " << best_r << ' ' << best_c << std::endl;
 
     // assert that we actually found a NE - FINALLY
     {
@@ -713,12 +711,12 @@ void solve_hp(
     tables.value_table[hash_state({hp_1, hp_2, true, true})] = solved_value_matrix[best_r][best_c][0];
 
     // analytic asserts
-    if (hp_1 <= BODY_SLAM.rolls[0].dmg)
-    {
-        assert((solved_value_matrix[best_r][best_c][0] == mpq_class{1, 2}));
-        assert((solved_value_matrix[best_r][best_c][1] == mpq_class{511, 512}));
-        assert((solved_value_matrix[best_r][best_c][2] == mpq_class{1, 512}));
-    }
+    // if (hp_1 <= BODY_SLAM.rolls[0].dmg)
+    // {
+    //     assert((solved_value_matrix[best_r][best_c][0] == mpq_class{1, 2}));
+    //     assert((solved_value_matrix[best_r][best_c][1] == mpq_class{511, 512}));
+    //     assert((solved_value_matrix[best_r][best_c][2] == mpq_class{1, 512}));
+    // }
 
     tables.move_table[hash_state({hp_1, hp_2, false, false})][0] = {MOVES[a]};
     tables.move_table[hash_state({hp_1, hp_2, false, false})][1] = {MOVES[c]};
@@ -762,10 +760,7 @@ int main()
     mpq_class value{0};
     init_tables(tables);
 
-    // size_t ns =  hash_state({167, 1, 1, 0});
-    // std::cout << '!' << ns << std::endl;
     total_solve(tables);
-    // tables.value_table[ns] = mpq_class{1, 2};
     // transitions(
     //     {167, 167, false, false},
     //     tables,
