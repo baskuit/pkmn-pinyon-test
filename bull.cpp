@@ -650,25 +650,33 @@ void solve_hp(
         }
     };
 
-    // print_solved_value_matrix<4, 4, 3>(solved_value_matrix);
-    // print_solved_value_matrix<4, 4, 1>(solved_value_sum_matrix);
-    // std::cout << "debug best strats: " << best_r << ' ' << best_c << std::endl;
-
     // assert that we actually found a NE - FINALLY
     {
+        bool all_good = true;
+
         for (int col_strat = 0; col_strat < N_MOVES * N_MOVES; ++col_strat)
         {
             // p2 can't improve on best_c
-            assert(solved_value_matrix[best_r][col_strat][0] >= solved_value_matrix[best_r][best_c][0]);
-            assert(solved_value_matrix[best_r][col_strat][1] >= solved_value_matrix[best_r][best_c][1]);
-            assert(solved_value_matrix[best_r][col_strat][2] >= solved_value_matrix[best_r][best_c][2]);
+            const bool br_0 = (solved_value_matrix[best_r][col_strat][0] >= solved_value_matrix[best_r][best_c][0]);
+            const bool br_1 = (solved_value_matrix[best_r][col_strat][1] >= solved_value_matrix[best_r][best_c][1]);
+            const bool br_2 = (solved_value_matrix[best_r][col_strat][2] >= solved_value_matrix[best_r][best_c][2]);
+            all_good &= (br_0 && br_1 && br_2);
         }
         for (int row_strat = 0; row_strat < N_MOVES * N_MOVES; ++row_strat)
         {
             // p1 can't improve on best_r
-            assert(solved_value_matrix[row_strat][best_c][0] <= solved_value_matrix[best_r][best_c][0]);
-            assert(solved_value_matrix[row_strat][best_c][1] <= solved_value_matrix[best_r][best_c][1]);
-            assert(solved_value_matrix[row_strat][best_c][2] <= solved_value_matrix[best_r][best_c][2]);
+            const bool br_0 = (solved_value_matrix[row_strat][best_c][0] <= solved_value_matrix[best_r][best_c][0]);
+            const bool br_1 = (solved_value_matrix[row_strat][best_c][1] <= solved_value_matrix[best_r][best_c][1]);
+            const bool br_2 = (solved_value_matrix[row_strat][best_c][2] <= solved_value_matrix[best_r][best_c][2]);
+            all_good &= (br_0 && br_1 && br_2);
+        }
+
+        if (!all_good)
+        {
+            print_solved_value_matrix<4, 4, 3>(solved_value_matrix);
+            print_solved_value_matrix<4, 4, 1>(solved_value_sum_matrix);
+            std::cout << "debug best strats: " << best_r << ' ' << best_c << std::endl;
+            exit(1);
         }
     };
 
