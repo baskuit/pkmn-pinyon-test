@@ -318,7 +318,7 @@ mpq_class lookup_value(
         const size_t hash = hash_state(reversed_state);
         mpq_class value = tables.value_table.at(hash);
         value = mpq_class{1} - value;
-        value.canonicalize();
+        // value.canonicalize();
         return value;
     }
     else
@@ -350,7 +350,7 @@ mpq_class q_value(
     {
         // after incrementing and 'continue' call
         // total_prob.canonicalize();
-        value.canonicalize();
+        // value.canonicalize();
 
         // iterate over all accuracy and freeze checks
         const bool hit_1 = i & 1;
@@ -365,7 +365,7 @@ mpq_class q_value(
         const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
 
         mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
-        hit_proc_prob.canonicalize();
+        // hit_proc_prob.canonicalize();
 
         // if (hit_proc_prob == mpq_class{0})
         // {
@@ -404,7 +404,7 @@ mpq_class q_value(
             const mpq_class &crit_p_1 = crit_1 ? CRIT : NO_CRIT;
             const mpq_class &crit_p_2 = crit_2 ? CRIT : NO_CRIT;
             mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
-            crit_prob.canonicalize();
+            // crit_prob.canonicalize();
 
             const std::vector<Roll> &rolls_1 = hit_1 ? (crit_1 ? move_1.crit_rolls : move_1.rolls) : RECHARGE.rolls;
             const std::vector<Roll> &rolls_2 = hit_2 ? (crit_2 ? move_2.crit_rolls : move_2.rolls) : RECHARGE.rolls;
@@ -415,9 +415,9 @@ mpq_class q_value(
                 {
                     // iterate over all damage rolls
                     mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
-                    roll_probs.canonicalize();
+                    // roll_probs.canonicalize();
                     mpq_class crit_roll_prob = crit_prob * roll_probs;
-                    crit_roll_prob.canonicalize();
+                    // crit_roll_prob.canonicalize();
 
                     total_prob += crit_roll_prob;
 
@@ -467,7 +467,7 @@ mpq_class q_value(
                     if (!debug)
                     {
                         mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
-                        weighted_solved_value.canonicalize();
+                        // weighted_solved_value.canonicalize();
                         value += weighted_solved_value;
                     }
                 }
@@ -604,6 +604,8 @@ void solve_state(
 
     // add to cache
     tables.value_table[hash_state(state)] = data[best_i][best_j];
+
+    assert(tables.value_table.at(hash_state(state)) == data[best_i][best_j]);
 }
 
 void total_solve(
@@ -613,8 +615,8 @@ void total_solve(
     // only give first 2 moves pp
     const size_t max_pp_local = 25;
 
-    const int last_save = 15;
-    const int new_save = 20;
+    const int last_save = 0;
+    const int new_save = 10;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
@@ -674,7 +676,7 @@ int main()
     Solution tables{};
     load_map("cache.txt", tables.value_table);
     total_solve(tables);
-    save_map("cache.txt", tables.value_table);
+    // save_map("cache.txt", tables.value_table);
 
     return 0;
 }

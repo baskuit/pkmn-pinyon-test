@@ -189,89 +189,12 @@ void print_state(
     std::cout << '{' << (int)state.pp_2[0] << ' ' << (int)state.pp_2[1] << ' ' << (int)state.pp_2[2] << ' ' << (int)state.pp_2[3] << "}";
 }
 
-size_t hash_state(
-    const State &state)
-{
-    size_t hash = 0;
-    hash += (state.hp_1 - 1);
-    hash *= MAX_HP;
-    hash += (state.hp_2 - 1);
-    hash *= 2;
-    hash += state.recharge_1;
-    hash *= 2;
-    hash += state.recharge_2;
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[0];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[1];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[2];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[3];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[0];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[1];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[2];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[3];
-    return hash;
-}
-
-State unhash_state(
-    size_t hash)
-{
-    const uint8_t pp_2_3 = hash % (MAX_PP + 1);
-    hash -= pp_2_3;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_2 = hash % (MAX_PP + 1);
-    hash -= pp_2_2;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_1 = hash % (MAX_PP + 1);
-    hash -= pp_2_1;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_0 = hash % (MAX_PP + 1);
-    hash -= pp_2_0;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_3 = hash % (MAX_PP + 1);
-    hash -= pp_1_3;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_2 = hash % (MAX_PP + 1);
-    hash -= pp_1_2;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_1 = hash % (MAX_PP + 1);
-    hash -= pp_1_1;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_0 = hash % (MAX_PP + 1);
-    hash -= pp_1_0;
-    hash /= (MAX_PP + 1);
-
-    const int recharge_2 = hash % 2;
-    hash -= recharge_2;
-    hash /= 2;
-
-    const int recharge_1 = hash % 2;
-    hash -= recharge_1;
-    hash /= 2;
-
-    const uint16_t hp_2 = hash % MAX_HP;
-    hash -= hp_2;
-    hash /= MAX_HP;
-
-    const uint16_t hp_1 = hash % MAX_HP;
-    hash -= hp_1;
-    hash /= MAX_HP;
-    return {
-        hp_1 + 1, hp_2 + 1, recharge_1, recharge_2, {pp_1_0, pp_1_1, pp_1_2, pp_1_3}, {pp_2_0, pp_2_1, pp_2_2, pp_2_3}};
-}
-
+// first entry is the value, the remaining 3 x 2 determine a prob distro over the 4 moves for both players
+// (last entry can be elided)
+using SolutionEntry = mpq_class[1 + 3 + 3];
 struct Solution
 {
-    std::unordered_map<size_t, mpq_class>
-        value_table{};
-    std::unordered_map<size_t, mpq_class[3]>
-        strategy_table{};
+    SolutionEntry data[353][353][2][2][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1];
 };
 
 mpq_class lookup_value(
@@ -304,27 +227,19 @@ mpq_class lookup_value(
 
     if (state.recharge_1 && state.recharge_2)
     {
-        State state_{state};
-        state_.recharge_1 = false;
-        state_.recharge_2 = false;
-        auto value = tables.value_table.at(hash_state(state_));
+        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][0];
         return value;
     }
 
     if (state.hp_1 < state.hp_2)
     {
-        const State reversed_state{
-            state.hp_2, state.hp_1, state.recharge_2, state.recharge_1, state.pp_2, state.pp_1};
-        const size_t hash = hash_state(reversed_state);
-        mpq_class value = tables.value_table.at(hash);
+        mpq_class value = tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2][state.recharge_1][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][0];
         value = mpq_class{1} - value;
-        value.canonicalize();
         return value;
     }
     else
     {
-        const size_t hash = hash_state(state);
-        auto value = tables.value_table.at(hash);
+        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1][state.recharge_2][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][0];
         return value;
     }
 }
@@ -603,7 +518,20 @@ void solve_state(
     }
 
     // add to cache
-    tables.value_table[hash_state(state)] = data[best_i][best_j];
+    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1][state.recharge_2][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
+    entry[0] = data[best_i][best_j];
+    for (int s = 0; s < 6; ++s)
+    {
+        entry[s] = mpq_class{0};
+    }
+    if (best_i < 4)
+    {
+        entry[best_i] = mpq_class{1};
+    }
+    if (best_j < 4)
+    {
+        entry[best_j + 3] = mpq_class{1};
+    }
 }
 
 void total_solve(
@@ -613,7 +541,7 @@ void total_solve(
     // only give first 2 moves pp
     const size_t max_pp_local = 25;
 
-    const int last_save = 15;
+    const int last_save = 0;
     const int new_save = 20;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
@@ -654,27 +582,34 @@ void total_solve(
                         solve_state(tables, state_00);
                         solve_state(tables, state_01);
                         solve_state(tables, state_10);
-
-                        // print_state(state_00);
-                        // std::cout << " : " << tables.value_table.at(hash_state(state_00)).get_str() << std::endl;
                     };
                 }
             }
 
             // progress report
-            const State state{hp_1, hp_2, false, false, {4, 4, 0, 0}, {4, 4, 0, 0}};
-            print_state(state);
-            std::cout << " : " << tables.value_table.at(hash_state(state)).get_d() << std::endl;
+            const SolutionEntry &entry = tables.data[hp_1 - 1][hp_2 - 1][0][0][4][4][0][0][4][4][0][0];
+            std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry[0].get_str() << std::endl;
+            std::cout << "STRATEGY 1: ";
+            for (int s = 0; s < 3; ++s) {
+                std::cout << entry[s + 1].get_str() << '\t';
+            }
+            std::cout << std::endl;
+            std::cout << "STRATEGY 2: ";
+            for (int s = 0; s < 3; ++s) {
+                std::cout << entry[s + 4].get_str() << '\t';
+            }
+            std::cout << std::endl;
         }
     }
 }
 
 int main()
 {
-    Solution tables{};
-    load_map("cache.txt", tables.value_table);
+    Solution *tables_ptr = new Solution;
+    Solution &tables = *tables_ptr;
+    // load_map("cache.txt", tables.value_table);
     total_solve(tables);
-    save_map("cache.txt", tables.value_table);
+    // save_map("cache.txt", tables.value_table);
 
     return 0;
 }
