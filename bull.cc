@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <utility>
+#include <sstream>
 
 const size_t MAX_HP = 353;
 const size_t MAX_PP = 4;
@@ -16,6 +17,47 @@ const size_t PP_ALL = (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1);
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
+
+void save_map(
+    const std::string filename,
+    const std::unordered_map<size_t, mpq_class> &value_table)
+{
+    std::ofstream file{filename, std::ios::out | std::ios::trunc};
+
+    if (!file.is_open())
+    {
+        std::cout << "FILE NOT OPEN" << std::endl;
+        exit(1);
+    }
+
+    for (const auto pair : value_table)
+    {
+        file << pair.first << ' ' << pair.second.get_str() << std::endl;
+    }
+
+    file.close();
+}
+
+void load_map(
+    const std::string filename,
+    std::unordered_map<size_t, mpq_class> &map)
+{
+    std::ifstream file{filename};
+
+    if (!file.is_open())
+    {
+        std::cout << "FILE NOT OPEN" << std::endl;
+        exit(1);
+    }
+    std::string line;
+    while (std::getline(file, line))
+    {
+        std::istringstream iss{line};
+        std::string hash, rational;
+        iss >> hash >> rational;
+        map[std::stoul(hash)] = mpq_class{rational};
+    }
+}
 
 struct Roll
 {
@@ -379,7 +421,6 @@ mpq_class q_value(
 
                     total_prob += crit_roll_prob;
 
-
                     const int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
                     const int post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
 
@@ -400,6 +441,7 @@ mpq_class q_value(
                     }
                     if (p2_ko_win)
                     {
+                        // value += crir_roll_prob * mpq_class{};
                         continue;
                     }
 
@@ -413,11 +455,13 @@ mpq_class q_value(
 
                     if (move_1_idx < 4)
                     {
-                        child.pp_1[move_1_idx] -= (child.pp_1[move_1_idx] > 0);
+                        // child.pp_1[move_1_idx] -= (child.pp_1[move_1_idx] > 0);
+                        child.pp_1[move_1_idx] -= 1;
                     }
                     if (move_2_idx < 4)
                     {
-                        child.pp_2[move_2_idx] -= (child.pp_2[move_2_idx] > 0);
+                        // child.pp_2[move_2_idx] -= (child.pp_2[move_2_idx] > 0);
+                        child.pp_2[move_2_idx] -= 1;
                     }
 
                     if (!debug)
@@ -436,28 +480,50 @@ void solve_state(
     Solution &tables,
     const State &state)
 {
-    // get legal moves
-    const auto x = state.recharge_1 ? std::pair<int, int>{4, 5} : std::pair<int, int>{0, 4};
-    const auto y = state.recharge_2 ? std::pair<int, int>{4, 5} : std::pair<int, int>{0, 4};
-
     using Matrix = std::array<std::array<mpq_class, 5>, 5>;
     Matrix data;
 
-    // solve and fill value matrix
-    for (int i = x.first; i < x.second; ++i)
+    std::vector<int> p1_legal_moves{};
+    std::vector<int> p2_legal_moves{};
+
+    // get legal moves
     {
-        if (i != 4 && state.pp_1[i] == 0)
+        if (state.recharge_1)
         {
-            continue;
+            p1_legal_moves.push_back(4);
+        }
+        else
+        {
+            for (int m = 0; m < 4; ++m)
+            {
+                if (state.pp_1[m] > 0)
+                {
+                    p1_legal_moves.push_back(m);
+                }
+            }
         }
 
-        for (int j = y.first; j < y.second; ++j)
+        if (state.recharge_2)
         {
-            if (j != 4 && state.pp_2[j] == 0)
+            p2_legal_moves.push_back(4);
+        }
+        else
+        {
+            for (int m = 0; m < 4; ++m)
             {
-                continue;
+                if (state.pp_2[m] > 0)
+                {
+                    p2_legal_moves.push_back(m);
+                }
             }
+        }
+    };
 
+    // solve and fill value matrix
+    for (const int i : p1_legal_moves)
+    {
+        for (const int j : p2_legal_moves)
+        {
             data[i][j] = q_value(tables, state, i, j);
         }
     }
@@ -466,26 +532,16 @@ void solve_state(
 
     mpq_class min{1};
     mpq_class max{0};
-    int best_r;
-    int best_c;
+    int best_i;
+    int best_j;
 
     {
-        for (int i = x.first; i < x.second; ++i)
+        for (const int i : p1_legal_moves)
         {
-            if (i != 4 && state.pp_1[i] == 0)
-            {
-                continue;
-            }
-
             mpq_class min_{4};
 
-            for (int j = y.first; j < y.second; ++j)
+            for (const int j : p2_legal_moves)
             {
-                if (j != 4 && state.pp_2[j] == 0)
-                {
-                    continue;
-                }
-
                 mpq_class x = data[i][j];
                 if (x < min_)
                 {
@@ -496,24 +552,18 @@ void solve_state(
             if (min_ > max)
             {
                 max = min_;
-                best_r = i;
+                best_i = i;
             }
         }
 
-        for (int j = y.first; j < y.second; ++j)
+        for (const int j : p2_legal_moves)
         {
-            if (j != 4 && state.pp_2[j] == 0)
-            {
-                continue;
-            }
+
             mpq_class max_{0};
 
-            for (int i = x.first; i < x.second; ++i)
+            for (const int i : p1_legal_moves)
             {
-                if (i != 4 && state.pp_1[i] == 0)
-                {
-                    continue;
-                }
+
                 mpq_class x = data[i][j];
                 if (x > max_)
                 {
@@ -524,7 +574,7 @@ void solve_state(
             if (max_ < min)
             {
                 min = max_;
-                best_c = j;
+                best_j = j;
             }
         }
     }
@@ -533,30 +583,19 @@ void solve_state(
     {
         bool all_good = true;
 
-        for (int i = x.first; i < x.second; ++i)
+        for (const int i : p1_legal_moves)
         {
-            if (i != 4 && state.pp_1[i] == 0)
-            {
-                continue;
-            }
-
-            // p1 can't improve on best_r
-            const bool br_0 = (data[i][best_c] <= data[best_r][best_c]);
-            const bool br_1 = (data[i][best_c] <= data[best_r][best_c]);
-            const bool br_2 = (data[i][best_c] <= data[best_r][best_c]);
+            const bool br_0 = (data[i][best_j] <= data[best_i][best_j]);
+            const bool br_1 = (data[i][best_j] <= data[best_i][best_j]);
+            const bool br_2 = (data[i][best_j] <= data[best_i][best_j]);
             all_good &= (br_0 && br_1 && br_2);
         }
 
-        for (int j = y.first; j < y.second; ++j)
+        for (const int j : p2_legal_moves)
         {
-            if (j != 4 && state.pp_2[j] == 0)
-            {
-                continue;
-            }
-            // p2 can't improve on best_c
-            const bool br_0 = (data[best_r][j] >= data[best_r][best_c]);
-            const bool br_1 = (data[best_r][j] >= data[best_r][best_c]);
-            const bool br_2 = (data[best_r][j] >= data[best_r][best_c]);
+            const bool br_0 = (data[best_i][j] >= data[best_i][best_j]);
+            const bool br_1 = (data[best_i][j] >= data[best_i][best_j]);
+            const bool br_2 = (data[best_i][j] >= data[best_i][best_j]);
             all_good &= (br_0 && br_1 && br_2);
         }
 
@@ -564,20 +603,26 @@ void solve_state(
     }
 
     // add to cache
-    tables.value_table[hash_state(state)] = data[best_r][best_c];
+    tables.value_table[hash_state(state)] = data[best_i][best_j];
 }
 
 void total_solve(
     Solution &tables)
 {
 
-    for (uint16_t hp_1 = 1; hp_1 <= 1; ++hp_1)
+    // only give first 2 moves pp
+    const size_t max_pp_local = 25;
+
+    const int last_save = 3;
+    const int new_save = 10;
+
+    for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
         for (uint16_t hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
 
             // iterate over pp values in dictionary order (skpping no pp)
-            for (size_t pp_2_iter = 1; pp_2_iter < 25; ++pp_2_iter)
+            for (size_t pp_2_iter = 1; pp_2_iter < max_pp_local; ++pp_2_iter)
             {
                 std::array<uint8_t, 4> pp_2_arr;
                 size_t pp_2_temp = pp_2_iter;
@@ -588,7 +633,7 @@ void total_solve(
                     pp_2_temp /= (MAX_PP + 1);
                 }
 
-                for (size_t pp_1_iter = 1; pp_1_iter < 25; ++pp_1_iter)
+                for (size_t pp_1_iter = 1; pp_1_iter < max_pp_local; ++pp_1_iter)
                 {
                     std::array<uint8_t, 4> pp_1_arr;
                     size_t pp_1_temp = pp_1_iter;
@@ -599,7 +644,7 @@ void total_solve(
                         pp_1_temp /= (MAX_PP + 1);
                     }
 
-                    // SOLve
+                    // Solve
                     {
 
                         const State state_00{hp_1, hp_2, false, false, pp_1_arr, pp_2_arr};
@@ -609,25 +654,27 @@ void total_solve(
                         solve_state(tables, state_00);
                         solve_state(tables, state_01);
                         solve_state(tables, state_10);
+
+                        // print_state(state_00);
+                        // std::cout << " : " << tables.value_table.at(hash_state(state_00)).get_str() << std::endl;
                     };
                 }
             }
 
+            // progress report
             const State state{hp_1, hp_2, false, false, {4, 4, 0, 0}, {4, 4, 0, 0}};
             print_state(state);
-
             std::cout << " : " << tables.value_table.at(hash_state(state)).get_d() << std::endl;
-
         }
     }
 }
 
 int main()
 {
-
-    // total_solve();
     Solution tables{};
+    load_map("cache.txt", tables.value_table);
     total_solve(tables);
+    save_map("cache.txt", tables.value_table);
 
     return 0;
 }
