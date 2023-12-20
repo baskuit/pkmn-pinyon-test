@@ -10,6 +10,24 @@
 #include <fstream>
 #include <utility>
 #include <sstream>
+#include <cmath>
+
+int f(
+    const int hp_1,
+    const int hp_2)
+{
+    return hp_1 * (hp_1 - 1) / 2 + hp_2 - 1;
+}
+
+std::pair<int, int> g(
+    const int index)
+{
+    const int w = std::sqrt(1 + 8 * index);
+    const int x = (1 + w) / 2;
+    const int z = x * (x - 1) / 2;
+    const int y = index - z + 1;
+    return {x, y};
+}
 
 constexpr size_t MAX_HP = 353;
 constexpr size_t HP_ALL = MAX_HP * (MAX_HP + 1) / 2;
@@ -18,6 +36,8 @@ constexpr size_t PP_ALL = (MAX_PP[0] + 1) * (MAX_PP[1] + 1) * (MAX_PP[2] + 1) * 
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
+
+std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
 
 void save_map(
     const std::string filename,
@@ -136,24 +156,27 @@ const std::array<const Move *, 5> MOVES{
     &RECHARGE};
 const size_t N_MOVES = 4;
 
+using HP_T = uint16_t;
+using PP_T = uint8_t;
+
 struct State
 {
-    uint16_t hp_1;
-    uint16_t hp_2;
+    HP_T hp_1;
+    HP_T hp_2;
     bool recharge_1;
     bool recharge_2;
-    std::array<uint8_t, 4> pp_1;
-    std::array<uint8_t, 4> pp_2;
+    std::array<PP_T, 4> pp_1;
+    std::array<PP_T, 4> pp_2;
 
     State() {}
 
     State(
-        const uint16_t hp_1,
-        const uint16_t hp_2,
+        const HP_T hp_1,
+        const HP_T hp_2,
         const bool recharge_1,
         const bool recharge_2,
-        const std::array<uint8_t, 4> pp_1_arr,
-        const std::array<uint8_t, 4> pp_2_arr)
+        const std::array<PP_T, 4> pp_1_arr,
+        const std::array<PP_T, 4> pp_2_arr)
         : hp_1{hp_1}, hp_2{hp_2}, recharge_1{recharge_1}, recharge_2{recharge_2}, pp_1{pp_1_arr}, pp_2{pp_2_arr}
     {
     }
@@ -197,13 +220,13 @@ struct SolutionEntry
     mpq_class value;
     // float p1_strategy[3];
     // float p2_strategy[3];
-    uint8_t p1_strategy;
-    uint8_t p2_strategy;
+    uint8_t p1_strategy[3];
+    uint8_t p2_strategy[3];
 };
 
 struct Solution
 {
-    SolutionEntry data[MAX_HP][MAX_HP][3][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1];
+    SolutionEntry data[HP_ALL][3][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1];
 };
 
 mpq_class lookup_value(
@@ -234,21 +257,25 @@ mpq_class lookup_value(
         return {1};
     }
 
-    if (state.recharge_1 && state.recharge_2)
-    {
-        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
-        return value;
-    }
+    // if (state.recharge_1 && state.recharge_2)
+    // {
+    //     const int index = f(state.hp_2, state.hp_1);
+    //     mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
+    //     return value;
+    // }
 
     if (state.hp_1 < state.hp_2)
     {
-        mpq_class value = tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]].value;
+        const int index = f(state.hp_2, state.hp_1);
+        mpq_class value = tables.data[index][state.recharge_2 + 2 * state.recharge_1][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]].value;
         value = mpq_class{1} - value;
         return value;
     }
     else
     {
-        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
+        const int index = f(state.hp_1, state.hp_2);
+        const int recharge_index = (state.recharge_1 && state.recharge_2) ? 0 : (2 * state.recharge_1 + state.recharge_2);
+        mpq_class value = tables.data[index][recharge_index][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
         return value;
     }
 }
@@ -527,23 +554,24 @@ void solve_state(
     }
 
     // add to cache
-    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
+    const int index = f(state.hp_1, state.hp_2);
+    SolutionEntry &entry = tables.data[index][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
     entry.value = data[best_i][best_j];
-    // for (int s = 0; s < 3; ++s)
-    // {
-    //     entry.p1_strategy[s] = 0;
-    //     entry.p2_strategy[s] = 0;
-    // }
-    // if (best_i < 4)
-    // {
-    //     entry.p1_strategy[best_i] = 1;
-    // }
-    // if (best_j < 4)
-    // {
-    //     entry.p2_strategy[best_j] = 1;
-    // }
-    entry.p1_strategy = best_i;
-    entry.p2_strategy = best_j;
+    for (int s = 0; s < 3; ++s)
+    {
+        entry.p1_strategy[s] = 0;
+        entry.p2_strategy[s] = 0;
+    }
+    if (best_i < 4)
+    {
+        entry.p1_strategy[best_i] = 255;
+    }
+    if (best_j < 4)
+    {
+        entry.p2_strategy[best_j] = 255;
+    }
+    // entry.p1_strategy = best_i;
+    // entry.p2_strategy = best_j;
 }
 
 void total_solve(
@@ -552,15 +580,15 @@ void total_solve(
     const int last_save = 0;
     const int new_save = 353;
 
-    for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
+    for (HP_T hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
-        for (uint16_t hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        for (HP_T hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
 
             // iterate over pp values in dictionary order (skpping no pp)
             for (size_t pp_2_iter = 1; pp_2_iter < PP_ALL; ++pp_2_iter)
             {
-                std::array<uint8_t, 4> pp_2_arr;
+                std::array<PP_T, 4> pp_2_arr;
                 size_t pp_2_temp = pp_2_iter;
                 for (int pp_2_idx = 0; pp_2_idx < 4; ++pp_2_idx)
                 {
@@ -571,7 +599,7 @@ void total_solve(
 
                 for (size_t pp_1_iter = 1; pp_1_iter < PP_ALL; ++pp_1_iter)
                 {
-                    std::array<uint8_t, 4> pp_1_arr;
+                    std::array<PP_T, 4> pp_1_arr;
                     size_t pp_1_temp = pp_1_iter;
                     for (int pp_1_idx = 0; pp_1_idx < 4; ++pp_1_idx)
                     {
@@ -598,24 +626,59 @@ void total_solve(
                 }
             }
 
-
-
             // progress report
-            const SolutionEntry &entry = tables.data[hp_1 - 1][hp_2 - 1][0][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]];
-            std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
-            // std::cout << "STRATEGY 1: ";
-            // for (int s = 0; s < 3; ++s)
-            // {
-            //     std::cout << entry.p1_strategy[s] << '\t';
-            // }
-            // std::cout << std::endl;
-            // std::cout << "STRATEGY 2: ";
-            // for (int s = 0; s < 3; ++s)
-            // {
-            //     std::cout << entry.p2_strategy[s] << '\t';
-            // }
-            // std::cout << std::endl;
-            std::cout << "STRATEGIES: " << (int)entry.p1_strategy << ' ' << (int)entry.p2_strategy << std::endl;
+            const int index = f(hp_1, hp_2);
+            const SolutionEntry &entry = tables.data[index][0][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]];
+            // write to terminal
+            {
+                std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
+                std::cout << "STRATEGY 1: ";
+                for (int s = 0; s < 3; ++s)
+                {
+                    std::cout << entry.p1_strategy[s] << '\t';
+                }
+                std::cout << std::endl;
+                std::cout << "STRATEGY 2: ";
+                for (int s = 0; s < 3; ++s)
+                {
+                    std::cout << entry.p2_strategy[s] << '\t';
+                }
+                std::cout << std::endl;
+            };
+            // write to file
+            {
+                OUTPUT_FILE << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
+                OUTPUT_FILE << "STRATEGY 1: ";
+                for (int s = 0; s < 3; ++s)
+                {
+                    OUTPUT_FILE << entry.p1_strategy[s] << '\t';
+                }
+                OUTPUT_FILE << std::endl;
+                OUTPUT_FILE << "STRATEGY 2: ";
+                for (int s = 0; s < 3; ++s)
+                {
+                    OUTPUT_FILE << entry.p2_strategy[s] << '\t';
+                }
+                OUTPUT_FILE << std::endl;
+            };
+        }
+    }
+}
+
+void test()
+{
+    std::unordered_map<int, bool> seen{};
+    for (int hp_1 = 1; hp_1 <= 353; ++hp_1)
+    {
+        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        {
+            const int index = f(hp_1, hp_2);
+            const auto pair = g(index);
+            std::cout << hp_1 << ' ' << hp_2 << ' ' << index << ' ' << pair.first << ' ' << pair.second << std::endl;
+            assert(hp_1 == pair.first);
+            assert(hp_2 == pair.second);
+            assert(seen[index] == false);
+            seen[index] = true;
         }
     }
 }
