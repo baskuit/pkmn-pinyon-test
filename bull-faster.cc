@@ -11,9 +11,10 @@
 #include <utility>
 #include <sstream>
 
-const size_t MAX_HP = 353;
-const size_t MAX_PP = 4;
-const size_t PP_ALL = (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1);
+constexpr size_t MAX_HP = 353;
+constexpr size_t HP_ALL = MAX_HP * (MAX_HP + 1) / 2;
+constexpr size_t MAX_PP[4] = {4, 4, 0, 0};
+constexpr size_t PP_ALL = (MAX_PP[0] + 1) * (MAX_PP[1] + 1) * (MAX_PP[2] + 1) * (MAX_PP[3] + 1);
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
@@ -191,10 +192,18 @@ void print_state(
 
 // first entry is the value, the remaining 3 x 2 determine a prob distro over the 4 moves for both players
 // (last entry can be elided)
-using SolutionEntry = mpq_class[1 + 3 + 3];
+struct SolutionEntry
+{
+    mpq_class value;
+    // float p1_strategy[3];
+    // float p2_strategy[3];
+    uint8_t p1_strategy;
+    uint8_t p2_strategy;
+};
+
 struct Solution
 {
-    SolutionEntry data[353][353][2][2][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1][MAX_PP + 1];
+    SolutionEntry data[MAX_HP][MAX_HP][3][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1][MAX_PP[0] + 1][MAX_PP[1] + 1][MAX_PP[2] + 1][MAX_PP[3] + 1];
 };
 
 mpq_class lookup_value(
@@ -227,19 +236,19 @@ mpq_class lookup_value(
 
     if (state.recharge_1 && state.recharge_2)
     {
-        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][0];
+        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
         return value;
     }
 
     if (state.hp_1 < state.hp_2)
     {
-        mpq_class value = tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2][state.recharge_1][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][0];
+        mpq_class value = tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]].value;
         value = mpq_class{1} - value;
         return value;
     }
     else
     {
-        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1][state.recharge_2][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]][0];
+        mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
         return value;
     }
 }
@@ -518,31 +527,30 @@ void solve_state(
     }
 
     // add to cache
-    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1][state.recharge_2][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
-    entry[0] = data[best_i][best_j];
-    for (int s = 0; s < 6; ++s)
-    {
-        entry[s] = mpq_class{0};
-    }
-    if (best_i < 4)
-    {
-        entry[best_i] = mpq_class{1};
-    }
-    if (best_j < 4)
-    {
-        entry[best_j + 3] = mpq_class{1};
-    }
+    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
+    entry.value = data[best_i][best_j];
+    // for (int s = 0; s < 3; ++s)
+    // {
+    //     entry.p1_strategy[s] = 0;
+    //     entry.p2_strategy[s] = 0;
+    // }
+    // if (best_i < 4)
+    // {
+    //     entry.p1_strategy[best_i] = 1;
+    // }
+    // if (best_j < 4)
+    // {
+    //     entry.p2_strategy[best_j] = 1;
+    // }
+    entry.p1_strategy = best_i;
+    entry.p2_strategy = best_j;
 }
 
 void total_solve(
     Solution &tables)
 {
-
-    // only give first 2 moves pp
-    const size_t max_pp_local = 25;
-
     const int last_save = 0;
-    const int new_save = 20;
+    const int new_save = 353;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
@@ -550,31 +558,35 @@ void total_solve(
         {
 
             // iterate over pp values in dictionary order (skpping no pp)
-            for (size_t pp_2_iter = 1; pp_2_iter < max_pp_local; ++pp_2_iter)
+            for (size_t pp_2_iter = 1; pp_2_iter < PP_ALL; ++pp_2_iter)
             {
                 std::array<uint8_t, 4> pp_2_arr;
                 size_t pp_2_temp = pp_2_iter;
                 for (int pp_2_idx = 0; pp_2_idx < 4; ++pp_2_idx)
                 {
-                    pp_2_arr[pp_2_idx] = pp_2_temp % (MAX_PP + 1);
+                    pp_2_arr[pp_2_idx] = pp_2_temp % (MAX_PP[pp_2_idx] + 1);
                     pp_2_temp -= pp_2_arr[pp_2_idx];
-                    pp_2_temp /= (MAX_PP + 1);
+                    pp_2_temp /= (MAX_PP[pp_2_idx] + 1);
                 }
 
-                for (size_t pp_1_iter = 1; pp_1_iter < max_pp_local; ++pp_1_iter)
+                for (size_t pp_1_iter = 1; pp_1_iter < PP_ALL; ++pp_1_iter)
                 {
                     std::array<uint8_t, 4> pp_1_arr;
                     size_t pp_1_temp = pp_1_iter;
                     for (int pp_1_idx = 0; pp_1_idx < 4; ++pp_1_idx)
                     {
-                        pp_1_arr[pp_1_idx] = pp_1_temp % (MAX_PP + 1);
+                        pp_1_arr[pp_1_idx] = pp_1_temp % (MAX_PP[pp_1_idx] + 1);
                         pp_1_temp -= pp_1_arr[pp_1_idx];
-                        pp_1_temp /= (MAX_PP + 1);
+                        pp_1_temp /= (MAX_PP[pp_1_idx] + 1);
                     }
+
+                    // std::cout << (int)pp_1_arr[0] << ' ' << (int)pp_1_arr[1] << ' ' << (int)pp_1_arr[2] << ' ' << (int)pp_1_arr[3] << std::endl;
+                    // std::cout << (int)pp_2_arr[0] << ' ' << (int)pp_2_arr[1] << ' ' << (int)pp_2_arr[2] << ' ' << (int)pp_2_arr[3] << std::endl;
+                    // std::cout << std::endl;
+                    // continue;
 
                     // Solve
                     {
-
                         const State state_00{hp_1, hp_2, false, false, pp_1_arr, pp_2_arr};
                         const State state_01{hp_1, hp_2, false, true, pp_1_arr, pp_2_arr};
                         const State state_10{hp_1, hp_2, true, false, pp_1_arr, pp_2_arr};
@@ -586,19 +598,24 @@ void total_solve(
                 }
             }
 
+
+
             // progress report
-            const SolutionEntry &entry = tables.data[hp_1 - 1][hp_2 - 1][0][0][4][4][0][0][4][4][0][0];
-            std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry[0].get_str() << std::endl;
-            std::cout << "STRATEGY 1: ";
-            for (int s = 0; s < 3; ++s) {
-                std::cout << entry[s + 1].get_str() << '\t';
-            }
-            std::cout << std::endl;
-            std::cout << "STRATEGY 2: ";
-            for (int s = 0; s < 3; ++s) {
-                std::cout << entry[s + 4].get_str() << '\t';
-            }
-            std::cout << std::endl;
+            const SolutionEntry &entry = tables.data[hp_1 - 1][hp_2 - 1][0][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]];
+            std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
+            // std::cout << "STRATEGY 1: ";
+            // for (int s = 0; s < 3; ++s)
+            // {
+            //     std::cout << entry.p1_strategy[s] << '\t';
+            // }
+            // std::cout << std::endl;
+            // std::cout << "STRATEGY 2: ";
+            // for (int s = 0; s < 3; ++s)
+            // {
+            //     std::cout << entry.p2_strategy[s] << '\t';
+            // }
+            // std::cout << std::endl;
+            std::cout << "STRATEGIES: " << (int)entry.p1_strategy << ' ' << (int)entry.p2_strategy << std::endl;
         }
     }
 }
@@ -607,6 +624,7 @@ int main()
 {
     Solution *tables_ptr = new Solution;
     Solution &tables = *tables_ptr;
+
     // load_map("cache.txt", tables.value_table);
     total_solve(tables);
     // save_map("cache.txt", tables.value_table);
