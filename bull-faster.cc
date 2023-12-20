@@ -12,20 +12,16 @@
 #include <sstream>
 #include <cmath>
 
-// #include <pinyon.hh>
-
-int f
-(
+int f(
     const int hp_1,
-    const int hp_2
-)
+    const int hp_2)
 {
     return hp_1 * (hp_1 - 1) / 2 + hp_2 - 1;
 }
 
 constexpr size_t MAX_HP = 353;
 constexpr size_t HP_ALL = MAX_HP * (MAX_HP + 1) / 2;
-constexpr size_t MAX_PP[4] = {4, 2, 2, 0};
+constexpr size_t MAX_PP[4] = {3, 2, 2, 0};
 constexpr size_t PP_ALL = (MAX_PP[0] + 1) * (MAX_PP[1] + 1) * (MAX_PP[2] + 1) * (MAX_PP[3] + 1);
 
 const mpq_class CRIT{55, 256};
@@ -206,13 +202,6 @@ mpq_class lookup_value(
         return {1};
     }
 
-    // if (state.recharge_1 && state.recharge_2)
-    // {
-    //     const int index = f(state.hp_2, state.hp_1);
-    //     mpq_class value = tables.data[state.hp_1 - 1][state.hp_2 - 1][0][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]].value;
-    //     return value;
-    // }
-
     if (state.hp_1 < state.hp_2)
     {
         const int index = f(state.hp_2, state.hp_1);
@@ -381,8 +370,8 @@ mpq_class q_value(
 void solve_state(
     Solution &tables,
     const State &state,
-    std::vector<mpq_class> &row_strategy,
-    std::vector<mpq_class> &col_strategy)
+    int &best_i,
+    int &best_j)
 {
     using M = std::array<std::array<mpq_class, 5>, 5>;
     M data;
@@ -436,8 +425,6 @@ void solve_state(
 
     mpq_class min{1};
     mpq_class max{0};
-    int best_i;
-    int best_j;
 
     {
         for (const int i : p1_legal_moves)
@@ -500,47 +487,15 @@ void solve_state(
     // add to cache
     const int index = f(state.hp_1, state.hp_2);
     SolutionEntry &entry = tables.data[index][state.recharge_2 + 2 * state.recharge_1][state.pp_1[0]][state.pp_1[1]][state.pp_1[2]][state.pp_1[3]][state.pp_2[0]][state.pp_2[1]][state.pp_2[2]][state.pp_2[3]];
-    // ne_is_pure = false;
+
     if (!ne_is_pure)
     {
-        // // std::cout << "PURE NE NOT FOUND!!! SOLVING" << std::endl;
-        // const size_t rows = p1_legal_moves.size();
-        // const size_t cols = p2_legal_moves.size();
-
-        // using Matrix_ = Matrix<ConstantSum<1, 1>::Value<RealType<mpq_class>>>;
-        // using Vector_ = std::vector<RealType<mpq_class>>;
-        // Matrix_ payoff_matrix{rows, cols};
-
-        // for (size_t row_idx = 0; row_idx < rows; ++row_idx)
-        // {
-        //     for (size_t col_idx = 0; col_idx < cols; ++col_idx)
-        //     {
-        //         payoff_matrix.get(row_idx, col_idx) = RealType<mpq_class>{data[p1_legal_moves[row_idx]][p2_legal_moves[col_idx]]};
-        //     }
-        // }
-
-        // Vector_ r{rows};
-        // Vector_ c{cols};
-        // ConstantSum<1, 1>::Value<RealType<mpq_class>> value =
-        //     LRSNash::solve(payoff_matrix, r, c);
-
-        // entry.value = value.get_row_value().get();
-        // for (int s = 0; s < rows; ++s)
-        // {
-        //     row_strategy[s] = r[s].get();
-        // }
-        // for (int s = 0; s < cols; ++s)
-        // {
-        //     col_strategy[s] = c[s].get();
-        // }
-        std::cout << "ERROR: NE IS NOT PURE" << std::endl;
+        std::cout << "PURE NE NOT FOUND" << std::endl;
         exit(1);
     }
     else
     {
         entry.value = data[best_i][best_j];
-        row_strategy[best_i] = mpq_class{1};
-        col_strategy[best_j] = mpq_class{1};
     }
 }
 
@@ -554,6 +509,9 @@ void total_solve(
     {
         for (HP_T hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
+
+            int best_i, best_j;
+            int ii, jj;
 
             // iterate over pp values in dictionary order (skpping no pp)
             for (size_t pp_2_iter = 1; pp_2_iter < PP_ALL; ++pp_2_iter)
@@ -583,62 +541,30 @@ void total_solve(
                         const State state_00{hp_1, hp_2, false, false, pp_1_arr, pp_2_arr};
                         const State state_01{hp_1, hp_2, false, true, pp_1_arr, pp_2_arr};
                         const State state_10{hp_1, hp_2, true, false, pp_1_arr, pp_2_arr};
-                        std::vector<mpq_class> row_strategy{};
-                        std::vector<mpq_class> col_strategy{};
 
-                        for (int x = 0; x < 4; ++x) {
-                            row_strategy.emplace_back();
-                            col_strategy.emplace_back();
-                        }
-
-                        solve_state(tables, state_00, row_strategy, col_strategy);
-
-                        if ((pp_1_iter == PP_ALL - 1) && (pp_2_iter == PP_ALL - 1))
-                        {
-                            // progress report
-                            const int index = f(hp_1, hp_2);
-                            const SolutionEntry &entry = tables.data[index][0][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]];
-                            // write to terminal
-                            {
-                                std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
-                                std::cout << "STRATEGY 1: ";
-                                for (int s = 0; s < 4; ++s)
-                                {
-                                    std::cout << row_strategy[s].get_str() << '\t';
-                                }
-                                std::cout << std::endl;
-                                std::cout << "STRATEGY 2: ";
-                                for (int s = 0; s < 4; ++s)
-                                {
-                                    std::cout << col_strategy[s].get_str() << '\t';
-                                }
-                                std::cout << std::endl;
-                            };
-                            // write to file
-                            {
-                                OUTPUT_FILE << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
-                                OUTPUT_FILE << "STRATEGY 1: ";
-                                for (int s = 0; s < 3; ++s)
-                                {
-                                    OUTPUT_FILE << row_strategy[s].get_str() << '\t';
-                                }
-                                OUTPUT_FILE << std::endl;
-                                OUTPUT_FILE << "STRATEGY 2: ";
-                                for (int s = 0; s < 3; ++s)
-                                {
-                                    OUTPUT_FILE << col_strategy[s].get_str() << '\t';
-                                }
-                                OUTPUT_FILE << std::endl;
-                            };
-                        }
-
-                        solve_state(tables, state_01, row_strategy, col_strategy);
-                        solve_state(tables, state_10, row_strategy, col_strategy);
+                        solve_state(tables, state_00, best_i, best_j);
+                        solve_state(tables, state_01, ii, jj);
+                        solve_state(tables, state_10, ii, jj);
                     };
                 }
             }
-            
 
+            // progress report
+            const int index = f(hp_1, hp_2);
+            const SolutionEntry &entry = tables.data[index][0][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]][MAX_PP[0]][MAX_PP[1]][MAX_PP[2]][MAX_PP[3]];
+            // write to terminal
+            {
+                std::cout << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
+                std::cout << "STRATEGY 1: " << best_i << std::endl;
+                std::cout << "STRATEGY 2: " << best_j << std::endl;
+
+            };
+            // write to file
+            {
+                OUTPUT_FILE << "HP: " << hp_1 << ' ' << hp_2 << " : " << entry.value.get_str() << std::endl;
+                OUTPUT_FILE << "STRATEGY 1: " << best_i << std::endl;
+                OUTPUT_FILE << "STRATEGY 2: " << best_j << std::endl;
+            };
         }
     }
 }
