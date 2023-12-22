@@ -1,63 +1,16 @@
+#include <pinyon.hh>
 #include <gmpxx.h>
 
-#include <assert.h>
-#include <stdint.h>
-#include <iostream>
 #include <string>
 #include <array>
 #include <vector>
-#include <unordered_map>
-#include <fstream>
-#include <utility>
-#include <sstream>
+#include <iostream>
+#include <stdint.h>
 
 const size_t MAX_HP = 353;
-const size_t MAX_PP = 4;
-const size_t PP_ALL = (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1) * (MAX_PP + 1);
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
-
-void save_map(
-    const std::string filename,
-    const std::unordered_map<size_t, mpq_class> &value_table)
-{
-    std::ofstream file{filename, std::ios::out | std::ios::trunc};
-
-    if (!file.is_open())
-    {
-        std::cout << "FILE NOT OPEN" << std::endl;
-        exit(1);
-    }
-
-    for (const auto pair : value_table)
-    {
-        file << pair.first << ' ' << pair.second.get_str() << std::endl;
-    }
-
-    file.close();
-}
-
-void load_map(
-    const std::string filename,
-    std::unordered_map<size_t, mpq_class> &map)
-{
-    std::ifstream file{filename};
-
-    if (!file.is_open())
-    {
-        std::cout << "FILE NOT OPEN" << std::endl;
-        exit(1);
-    }
-    std::string line;
-    while (std::getline(file, line))
-    {
-        std::istringstream iss{line};
-        std::string hash, rational;
-        iss >> hash >> rational;
-        map[std::stoul(hash)] = mpq_class{rational};
-    }
-}
 
 struct Roll
 {
@@ -135,197 +88,70 @@ const std::array<const Move *, 5> MOVES{
     &RECHARGE};
 const size_t N_MOVES = 4;
 
+using HP_T = uint16_t;
+
 struct State
 {
-    uint16_t hp_1;
-    uint16_t hp_2;
+    HP_T hp_1;
+    HP_T hp_2;
     bool recharge_1;
     bool recharge_2;
-    std::array<uint8_t, 4> pp_1;
-    std::array<uint8_t, 4> pp_2;
 
     State() {}
 
     State(
-        const uint16_t hp_1,
-        const uint16_t hp_2,
+        const HP_T hp_1,
+        const HP_T hp_2,
         const bool recharge_1,
-        const bool recharge_2,
-        const std::array<uint8_t, 4> pp_1_arr,
-        const std::array<uint8_t, 4> pp_2_arr)
-        : hp_1{hp_1}, hp_2{hp_2}, recharge_1{recharge_1}, recharge_2{recharge_2}, pp_1{pp_1_arr}, pp_2{pp_2_arr}
+        const bool recharge_2)
+        : hp_1{hp_1}, hp_2{hp_2}, recharge_1{recharge_1}, recharge_2{recharge_2}
     {
     }
 
     bool operator==(const State &other) const
     {
-        const bool hp_and_recharge_check =
-            (hp_1 == other.hp_1) &&
-            (hp_2 == other.hp_1) &&
-            (recharge_1 == other.recharge_1) &&
-            (recharge_2 == other.recharge_2);
-
-        if (!hp_and_recharge_check)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < 4; ++i)
-        {
-            if ((pp_1[i] != other.pp_1[i]) || (pp_2[i] != other.pp_2[i]))
-            {
-                return false;
-            }
-        }
-        return true;
+        return (hp_1 == other.hp_1) &&
+               (hp_2 == other.hp_1) &&
+               (recharge_1 == other.recharge_1) &&
+               (recharge_2 == other.recharge_2);
     }
 };
 
 void print_state(
     const State &state)
 {
-    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << ' ';
-    std::cout << '{' << (int)state.pp_1[0] << ' ' << (int)state.pp_1[1] << ' ' << (int)state.pp_1[2] << ' ' << (int)state.pp_1[3] << "} ";
-    std::cout << '{' << (int)state.pp_2[0] << ' ' << (int)state.pp_2[1] << ' ' << (int)state.pp_2[2] << ' ' << (int)state.pp_2[3] << "}";
+    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << ' ' << std::endl;
 }
 
-size_t hash_state(
-    const State &state)
+struct SolutionEntry
 {
-    size_t hash = 0;
-    hash += (state.hp_1 - 1);
-    hash *= MAX_HP;
-    hash += (state.hp_2 - 1);
-    hash *= 2;
-    hash += state.recharge_1;
-    hash *= 2;
-    hash += state.recharge_2;
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[0];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[1];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[2];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_1[3];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[0];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[1];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[2];
-    hash *= (MAX_PP + 1);
-    hash += state.pp_2[3];
-    return hash;
-}
+    mpq_class value;
+    float p1_strategy[4];
+    float p2_strategy[4];
+};
 
-State unhash_state(
-    size_t hash)
-{
-    const uint8_t pp_2_3 = hash % (MAX_PP + 1);
-    hash -= pp_2_3;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_2 = hash % (MAX_PP + 1);
-    hash -= pp_2_2;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_1 = hash % (MAX_PP + 1);
-    hash -= pp_2_1;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_2_0 = hash % (MAX_PP + 1);
-    hash -= pp_2_0;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_3 = hash % (MAX_PP + 1);
-    hash -= pp_1_3;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_2 = hash % (MAX_PP + 1);
-    hash -= pp_1_2;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_1 = hash % (MAX_PP + 1);
-    hash -= pp_1_1;
-    hash /= (MAX_PP + 1);
-    const uint8_t pp_1_0 = hash % (MAX_PP + 1);
-    hash -= pp_1_0;
-    hash /= (MAX_PP + 1);
-
-    const int recharge_2 = hash % 2;
-    hash -= recharge_2;
-    hash /= 2;
-
-    const int recharge_1 = hash % 2;
-    hash -= recharge_1;
-    hash /= 2;
-
-    const uint16_t hp_2 = hash % MAX_HP;
-    hash -= hp_2;
-    hash /= MAX_HP;
-
-    const uint16_t hp_1 = hash % MAX_HP;
-    hash -= hp_1;
-    hash /= MAX_HP;
-    return {
-        hp_1 + 1, hp_2 + 1, recharge_1, recharge_2, {pp_1_0, pp_1_1, pp_1_2, pp_1_3}, {pp_2_0, pp_2_1, pp_2_2, pp_2_3}};
-}
+// using Solution = SolutionEntry[MAX_HP][MAX_HP][3];
 
 struct Solution
 {
-    std::unordered_map<size_t, mpq_class>
-        value_table{};
-    std::unordered_map<size_t, mpq_class[3]>
-        strategy_table{};
+    SolutionEntry data[MAX_HP][MAX_HP][3];
 };
 
 mpq_class lookup_value(
     const Solution &tables,
     const State &state)
 {
-    // pp inspection day
-    bool pp_1_out = true;
-    bool pp_2_out = true;
-    for (int m = 0; m < 4; ++m)
-    {
-        pp_1_out &= (state.pp_1[m] == 0);
-        pp_2_out &= (state.pp_2[m] == 0);
-    }
-    if (pp_1_out)
-    {
-        if (pp_2_out)
-        {
-            return {1, 2};
-        }
-        else
-        {
-            return {0};
-        }
-    }
-    if (pp_2_out)
-    {
-        return {1};
-    }
-
     if (state.recharge_1 && state.recharge_2)
     {
-        State state_{state};
-        state_.recharge_1 = false;
-        state_.recharge_2 = false;
-        auto value = tables.value_table.at(hash_state(state_));
-        return value;
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][0].value;
     }
-
     if (state.hp_1 < state.hp_2)
     {
-        const State reversed_state{
-            state.hp_2, state.hp_1, state.recharge_2, state.recharge_1, state.pp_2, state.pp_1};
-        const size_t hash = hash_state(reversed_state);
-        mpq_class value = tables.value_table.at(hash);
-        value = mpq_class{1} - value;
-        value.canonicalize();
-        return value;
+        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2 * 2 + state.recharge_1].value;
     }
     else
     {
-        const size_t hash = hash_state(state);
-        auto value = tables.value_table.at(hash);
-        return value;
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1 * 2 + state.recharge_2].value;
     }
 }
 
@@ -337,20 +163,20 @@ mpq_class q_value(
     const bool debug = false)
 {
     mpq_class value{0};
+    mpq_class reflexive_prob{0};
 
     const Move &move_1 = *MOVES[move_1_idx];
     const Move &move_2 = *MOVES[move_2_idx];
 
     // Debug only
     // State hashes in, prob of encountering out
-    std::unordered_map<size_t, mpq_class> children{};
     mpq_class total_prob{0};
 
     for (int i = 0; i < 16; ++i)
     {
         // after incrementing and 'continue' call
         // total_prob.canonicalize();
-        value.canonicalize();
+        // value.canonicalize();
 
         // iterate over all accuracy and freeze checks
         const bool hit_1 = i & 1;
@@ -364,8 +190,8 @@ mpq_class q_value(
         const mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
         const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
 
-        mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
-        hit_proc_prob.canonicalize();
+        const mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
+        // hit_proc_prob.canonicalize();
 
         // if (hit_proc_prob == mpq_class{0})
         // {
@@ -378,7 +204,7 @@ mpq_class q_value(
 
         if (p1_frz_win)
         {
-            // should not be affected by the speed tie stuff?
+            // total_prob += hit_proc_prob;
             if (p2_frz_win)
             {
                 value += hit_proc_prob * mpq_class{1, 2};
@@ -391,6 +217,7 @@ mpq_class q_value(
         }
         if (p2_frz_win)
         {
+            // total_prob += hit_proc_prob;
             // value += mpq_class{};
             continue;
         }
@@ -403,26 +230,23 @@ mpq_class q_value(
 
             const mpq_class &crit_p_1 = crit_1 ? CRIT : NO_CRIT;
             const mpq_class &crit_p_2 = crit_2 ? CRIT : NO_CRIT;
-            mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
-            crit_prob.canonicalize();
+            const mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
 
             const std::vector<Roll> &rolls_1 = hit_1 ? (crit_1 ? move_1.crit_rolls : move_1.rolls) : RECHARGE.rolls;
             const std::vector<Roll> &rolls_2 = hit_2 ? (crit_2 ? move_2.crit_rolls : move_2.rolls) : RECHARGE.rolls;
 
-            for (const Roll &roll_1 : rolls_1)
+            for (const Roll roll_1 : rolls_1)
             {
-                for (const Roll &roll_2 : rolls_2)
+                for (const Roll roll_2 : rolls_2)
                 {
                     // iterate over all damage rolls
-                    mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
-                    roll_probs.canonicalize();
-                    mpq_class crit_roll_prob = crit_prob * roll_probs;
-                    crit_roll_prob.canonicalize();
+                    const mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
+                    const mpq_class crit_roll_prob = crit_prob * roll_probs;
 
-                    total_prob += crit_roll_prob;
+                    // total_prob += crit_roll_prob;
 
-                    const int post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
-                    const int post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
+                    const HP_T post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
+                    const HP_T post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
 
                     const bool p1_ko_win = (post_hp_2 == 0);
                     const bool p2_ko_win = (post_hp_1 == 0);
@@ -449,232 +273,112 @@ mpq_class q_value(
                         post_hp_1,
                         post_hp_2,
                         move_1.must_recharge && hit_1,
-                        move_2.must_recharge && hit_2,
-                        state.pp_1,
-                        state.pp_2};
+                        move_2.must_recharge && hit_2};
 
-                    if (move_1_idx < 4)
+                    if (child != state)
                     {
-                        // child.pp_1[move_1_idx] -= (child.pp_1[move_1_idx] > 0);
-                        child.pp_1[move_1_idx] -= 1;
-                    }
-                    if (move_2_idx < 4)
-                    {
-                        // child.pp_2[move_2_idx] -= (child.pp_2[move_2_idx] > 0);
-                        child.pp_2[move_2_idx] -= 1;
-                    }
-
-                    if (!debug)
-                    {
-                        mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
-                        weighted_solved_value.canonicalize();
+                        const mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
                         value += weighted_solved_value;
+                    } else {
+                        reflexive_prob += crit_roll_prob;
                     }
                 }
             }
         }
     }
-    return value;
+
+    if (reflexive_prob > mpq_class{0}) {
+        assert(state.recharge_1 == false && state.recharge_2 == false);
+        // only S00 should have this
+    }
+
+    return value / (mpq_class{1} - reflexive_prob);
 }
 void solve_state(
     Solution &tables,
     const State &state)
 {
-    using Matrix = std::array<std::array<mpq_class, 5>, 5>;
-    Matrix data;
-
-    std::vector<int> p1_legal_moves{};
-    std::vector<int> p2_legal_moves{};
+    using Types = DefaultTypes<mpq_class, int, int, mpq_class, ConstantSum<1, 1>::Value>;
 
     // get legal moves
-    {
-        if (state.recharge_1)
-        {
-            p1_legal_moves.push_back(4);
-        }
-        else
-        {
-            for (int m = 0; m < 4; ++m)
-            {
-                if (state.pp_1[m] > 0)
-                {
-                    p1_legal_moves.push_back(m);
-                }
-            }
-        }
+    std::vector<int> p1_legal_moves = state.recharge_1 ? std::vector<int>{4} : std::vector<int>{0, 1, 2, 3};
+    std::vector<int> p2_legal_moves = state.recharge_2 ? std::vector<int>{4} : std::vector<int>{0, 1, 2, 3};
 
-        if (state.recharge_2)
-        {
-            p2_legal_moves.push_back(4);
-        }
-        else
-        {
-            for (int m = 0; m < 4; ++m)
-            {
-                if (state.pp_2[m] > 0)
-                {
-                    p2_legal_moves.push_back(m);
-                }
-            }
-        }
-    };
+    const size_t rows = p1_legal_moves.size();
+    const size_t cols = p2_legal_moves.size();
 
-    // solve and fill value matrix
-    for (const int i : p1_legal_moves)
+    // fill payoff matrix
+    Types::MatrixValue payoff_matrix{rows, cols};
+
+    for (int row_idx = 0; row_idx < rows; ++row_idx)
     {
-        for (const int j : p2_legal_moves)
+        for (int col_idx = 0; col_idx < cols; ++col_idx)
         {
-            data[i][j] = q_value(tables, state, i, j);
+            payoff_matrix.get(row_idx, col_idx) =
+                Types::Value{q_value(tables, state, p1_legal_moves[row_idx], p2_legal_moves[col_idx])};
         }
     }
 
-    // get (pure) NE
+    // payoff_matrix.print();
 
-    mpq_class min{1};
-    mpq_class max{0};
-    int best_i;
-    int best_j;
+    // solve
 
+    Types::VectorReal row_strategy{rows};
+    Types::VectorReal col_strategy{cols};
+
+    auto value = LRSNash::solve(payoff_matrix, row_strategy, col_strategy);
+    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1 * 2 + state.recharge_2];
+
+    entry.value = value.get_row_value().get();
+
+    for (int row_idx = 0; row_idx < rows; ++row_idx)
     {
-        for (const int i : p1_legal_moves)
-        {
-            mpq_class min_{4};
-
-            for (const int j : p2_legal_moves)
-            {
-                mpq_class x = data[i][j];
-                if (x < min_)
-                {
-                    min_ = x;
-                }
-            }
-
-            if (min_ > max)
-            {
-                max = min_;
-                best_i = i;
-            }
-        }
-
-        for (const int j : p2_legal_moves)
-        {
-
-            mpq_class max_{0};
-
-            for (const int i : p1_legal_moves)
-            {
-
-                mpq_class x = data[i][j];
-                if (x > max_)
-                {
-                    max_ = x;
-                }
-            }
-
-            if (max_ < min)
-            {
-                min = max_;
-                best_j = j;
-            }
-        }
+        entry.p1_strategy[row_idx] = row_strategy[row_idx].get().get_d();
     }
 
-    // assert NE is pure
+    for (int col_idx = 0; col_idx < cols; ++col_idx)
     {
-        bool all_good = true;
-
-        for (const int i : p1_legal_moves)
-        {
-            const bool br_0 = (data[i][best_j] <= data[best_i][best_j]);
-            const bool br_1 = (data[i][best_j] <= data[best_i][best_j]);
-            const bool br_2 = (data[i][best_j] <= data[best_i][best_j]);
-            all_good &= (br_0 && br_1 && br_2);
-        }
-
-        for (const int j : p2_legal_moves)
-        {
-            const bool br_0 = (data[best_i][j] >= data[best_i][best_j]);
-            const bool br_1 = (data[best_i][j] >= data[best_i][best_j]);
-            const bool br_2 = (data[best_i][j] >= data[best_i][best_j]);
-            all_good &= (br_0 && br_1 && br_2);
-        }
-
-        assert(all_good);
+        entry.p2_strategy[col_idx] = col_strategy[col_idx].get().get_d();
     }
-
-    // add to cache
-    tables.value_table[hash_state(state)] = data[best_i][best_j];
 }
 
 void total_solve(
     Solution &tables)
 {
-
-    // only give first 2 moves pp
-    const size_t max_pp_local = 25;
-
-    const int last_save = 15;
-    const int new_save = 20;
+    const int last_save = 0;
+    const int new_save = 30;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
         for (uint16_t hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
 
-            // iterate over pp values in dictionary order (skpping no pp)
-            for (size_t pp_2_iter = 1; pp_2_iter < max_pp_local; ++pp_2_iter)
-            {
-                std::array<uint8_t, 4> pp_2_arr;
-                size_t pp_2_temp = pp_2_iter;
-                for (int pp_2_idx = 0; pp_2_idx < 4; ++pp_2_idx)
-                {
-                    pp_2_arr[pp_2_idx] = pp_2_temp % (MAX_PP + 1);
-                    pp_2_temp -= pp_2_arr[pp_2_idx];
-                    pp_2_temp /= (MAX_PP + 1);
-                }
+            // Solve
 
-                for (size_t pp_1_iter = 1; pp_1_iter < max_pp_local; ++pp_1_iter)
-                {
-                    std::array<uint8_t, 4> pp_1_arr;
-                    size_t pp_1_temp = pp_1_iter;
-                    for (int pp_1_idx = 0; pp_1_idx < 4; ++pp_1_idx)
-                    {
-                        pp_1_arr[pp_1_idx] = pp_1_temp % (MAX_PP + 1);
-                        pp_1_temp -= pp_1_arr[pp_1_idx];
-                        pp_1_temp /= (MAX_PP + 1);
-                    }
+            const State state_00{hp_1, hp_2, false, false};
+            const State state_01{hp_1, hp_2, false, true};
+            const State state_10{hp_1, hp_2, true, false};
 
-                    // Solve
-                    {
-
-                        const State state_00{hp_1, hp_2, false, false, pp_1_arr, pp_2_arr};
-                        const State state_01{hp_1, hp_2, false, true, pp_1_arr, pp_2_arr};
-                        const State state_10{hp_1, hp_2, true, false, pp_1_arr, pp_2_arr};
-
-                        solve_state(tables, state_00);
-                        solve_state(tables, state_01);
-                        solve_state(tables, state_10);
-
-                        // print_state(state_00);
-                        // std::cout << " : " << tables.value_table.at(hash_state(state_00)).get_str() << std::endl;
-                    };
-                }
-            }
+            solve_state(tables, state_00);
+            solve_state(tables, state_01);
+            solve_state(tables, state_10);
 
             // progress report
-            const State state{hp_1, hp_2, false, false, {4, 4, 0, 0}, {4, 4, 0, 0}};
-            print_state(state);
-            std::cout << " : " << tables.value_table.at(hash_state(state)).get_d() << std::endl;
+            print_state(state_00);
+            std::cout << " : " << tables.data[hp_1 - 1][hp_2 - 1][0].value.get_str() << std::endl;
         }
     }
 }
 
 int main()
 {
-    Solution tables{};
-    load_map("cache.txt", tables.value_table);
+    Solution *tables_ptr = new Solution();
+    Solution &tables = *tables_ptr;
+
+    const size_t table_size_bytes = sizeof(tables);
+    std::cout << "SOLUTION TABLE SIZE (MB): " << (table_size_bytes >> 20) << std::endl << std::endl;
+
     total_solve(tables);
-    save_map("cache.txt", tables.value_table);
 
     return 0;
 }
