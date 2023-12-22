@@ -1,5 +1,4 @@
 #include <pinyon.hh>
-#include <gmpxx.h>
 
 #include <string>
 #include <array>
@@ -482,40 +481,45 @@ void total_solve(
 
             // progress report
             {
-                std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
-                std::cout << "00 : " << entries[0].value.get_str() << " = " << entries[0].value.get_d() << std::endl;
-                std::cout << "01 : " << entries[1].value.get_str() << " = " << entries[1].value.get_d() << std::endl;
-                std::cout << "10 : " << entries[2].value.get_str() << " = " << entries[2].value.get_d() << std::endl;
-                std::cout << "STRATEGIES:" << std::endl;
-                for (int i = 0; i < 4; ++i)
+                for (int r = 0; r < 3; ++r)
                 {
-                    std::cout << entries[0].p1_strategy[i] << ' ';
+                    const State state{hp_1, hp_2, r % 2, r / 2};
+                    print_state(state);
+                    std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                    std::cout << "STRATEGIES:" << std::endl;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        std::cout << entries[r].p1_strategy[i] << ' ';
+                    }
+                    std::cout << std::endl;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        std::cout << entries[r].p2_strategy[i] << ' ';
+                    }
+                    std::cout << std::endl;
                 }
-                std::cout << std::endl;
-                for (int i = 0; i < 4; ++i)
-                {
-                    std::cout << entries[0].p2_strategy[i] << ' ';
-                }
-                std::cout << std::endl;
             };
 
             // file output
             {
-                OUTPUT_FILE << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
-                OUTPUT_FILE << "00 : " << entries[0].value.get_str() << " = " << entries[0].value.get_d() << std::endl;
-                OUTPUT_FILE << "01 : " << entries[1].value.get_str() << " = " << entries[1].value.get_d() << std::endl;
-                OUTPUT_FILE << "10 : " << entries[2].value.get_str() << " = " << entries[2].value.get_d() << std::endl;
-                OUTPUT_FILE << "STRATEGIES:" << std::endl;
-                for (int i = 0; i < 4; ++i)
+                for (int r = 0; r < 3; ++r)
                 {
-                    OUTPUT_FILE << entries[0].p1_strategy[i] << ' ';
+                    const State state{hp_1, hp_2, r % 2, r / 2};
+                    // print_state(state);
+                    OUTPUT_FILE << "STATE: " << state.hp_1 << ' ' << state.hp_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
+                    OUTPUT_FILE << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                    OUTPUT_FILE << "STRATEGIES:" << std::endl;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        OUTPUT_FILE << entries[r].p1_strategy[i] << ' ';
+                    }
+                    OUTPUT_FILE << std::endl;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        OUTPUT_FILE << entries[r].p2_strategy[i] << ' ';
+                    }
+                    OUTPUT_FILE << std::endl;
                 }
-                OUTPUT_FILE << std::endl;
-                for (int i = 0; i < 4; ++i)
-                {
-                    OUTPUT_FILE << entries[0].p2_strategy[i] << ' ';
-                }
-                OUTPUT_FILE << std::endl;
             };
         }
     }
