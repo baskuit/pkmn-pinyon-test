@@ -6,6 +6,9 @@
 #include <vector>
 #include <iostream>
 #include <stdint.h>
+#include <fstream>
+
+std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
 
 const size_t MAX_HP = 353;
 
@@ -83,10 +86,9 @@ const Move RECHARGE{
 const std::array<const Move *, 5> MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
-    &BODY_SLAM,
+    &BLIZZARD,
     &BODY_SLAM,
     &RECHARGE};
-const size_t N_MOVES = 4;
 
 using HP_T = uint16_t;
 
@@ -94,16 +96,16 @@ struct State
 {
     HP_T hp_1;
     HP_T hp_2;
-    bool recharge_1;
-    bool recharge_2;
+    int recharge_1;
+    int recharge_2;
 
     State() {}
 
     State(
         const HP_T hp_1,
         const HP_T hp_2,
-        const bool recharge_1,
-        const bool recharge_2)
+        const int recharge_1,
+        const int recharge_2)
         : hp_1{hp_1}, hp_2{hp_2}, recharge_1{recharge_1}, recharge_2{recharge_2}
     {
     }
@@ -111,7 +113,7 @@ struct State
     bool operator==(const State &other) const
     {
         return (hp_1 == other.hp_1) &&
-               (hp_2 == other.hp_1) &&
+               (hp_2 == other.hp_2) &&
                (recharge_1 == other.recharge_1) &&
                (recharge_2 == other.recharge_2);
     }
@@ -137,21 +139,71 @@ struct Solution
     SolutionEntry data[MAX_HP][MAX_HP][3];
 };
 
+void init_tables(
+    Solution &tables)
+{
+    for (int hp_1 = 1; hp_1 <= BODY_SLAM.rolls[0].dmg; ++hp_1)
+    {
+        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        {
+            SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1];
+            entries[0].value = mpq_class{1, 2};
+            entries[1].value = mpq_class{1, 512};
+            entries[2].value = mpq_class{511, 512};
+        }
+    }
+}
+
+SolutionEntry &get_entry(
+    Solution &tables,
+    const State &state)
+{
+    int x;
+    if (state.hp_1 < state.hp_2)
+    {
+        x = (state.recharge_1 << 1) + (state.recharge_2 << 0);
+        return tables.data[state.hp_2 - 1][state.hp_1 - 1][x % 3];
+    }
+    else
+    {
+        int x = (state.recharge_1 << 0) + (state.recharge_2 << 1);
+
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][x % 3];
+    }
+}
+
+const SolutionEntry &get_entry(
+    const Solution &tables,
+    const State &state)
+{
+    int x;
+    if (state.hp_1 < state.hp_2)
+    {
+        x = (state.recharge_1 << 1) + (state.recharge_2 << 0);
+        return tables.data[state.hp_2 - 1][state.hp_1 - 1][x % 3];
+    }
+    else
+    {
+        int x = (state.recharge_1 << 0) + (state.recharge_2 << 1);
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][x % 3];
+    }
+}
+
 mpq_class lookup_value(
     const Solution &tables,
     const State &state)
 {
-    if (state.recharge_1 && state.recharge_2)
-    {
-        return tables.data[state.hp_1 - 1][state.hp_2 - 1][0].value;
-    }
+    const SolutionEntry &entry = get_entry(tables, state);
+
     if (state.hp_1 < state.hp_2)
     {
-        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.recharge_2 * 2 + state.recharge_1].value;
+        mpq_class answer = mpq_class{1} - entry.value;
+        answer.canonicalize();
+        return answer;
     }
     else
     {
-        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1 * 2 + state.recharge_2].value;
+        return entry.value;
     }
 }
 
@@ -174,10 +226,6 @@ mpq_class q_value(
 
     for (int i = 0; i < 16; ++i)
     {
-        // after incrementing and 'continue' call
-        // total_prob.canonicalize();
-        // value.canonicalize();
-
         // iterate over all accuracy and freeze checks
         const bool hit_1 = i & 1;
         const bool hit_2 = i & 2;
@@ -190,21 +238,21 @@ mpq_class q_value(
         const mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
         const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
 
-        const mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
-        // hit_proc_prob.canonicalize();
+        mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
+        hit_proc_prob.canonicalize();
 
-        // if (hit_proc_prob == mpq_class{0})
-        // {
-        //     // Don't need to check rolls if we are assuming freeze on move that can't freeze
-        //     continue;
-        // }
+        if (hit_proc_prob == mpq_class{0})
+        {
+            continue;
+        }
 
         const bool p1_frz_win = move_1.may_freeze && hit_1 && proc_1;
         const bool p2_frz_win = move_2.may_freeze && hit_2 && proc_2;
 
         if (p1_frz_win)
         {
-            // total_prob += hit_proc_prob;
+            total_prob += hit_proc_prob;
+            total_prob.canonicalize();
             if (p2_frz_win)
             {
                 value += hit_proc_prob * mpq_class{1, 2};
@@ -213,11 +261,13 @@ mpq_class q_value(
             {
                 value += hit_proc_prob;
             }
+            value.canonicalize();
             continue;
         }
         if (p2_frz_win)
         {
-            // total_prob += hit_proc_prob;
+            total_prob += hit_proc_prob;
+            total_prob.canonicalize();
             // value += mpq_class{};
             continue;
         }
@@ -230,7 +280,8 @@ mpq_class q_value(
 
             const mpq_class &crit_p_1 = crit_1 ? CRIT : NO_CRIT;
             const mpq_class &crit_p_2 = crit_2 ? CRIT : NO_CRIT;
-            const mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
+            mpq_class crit_prob = hit_proc_prob * crit_p_1 * crit_p_2;
+            crit_prob.canonicalize();
 
             const std::vector<Roll> &rolls_1 = hit_1 ? (crit_1 ? move_1.crit_rolls : move_1.rolls) : RECHARGE.rolls;
             const std::vector<Roll> &rolls_2 = hit_2 ? (crit_2 ? move_2.crit_rolls : move_2.rolls) : RECHARGE.rolls;
@@ -240,10 +291,13 @@ mpq_class q_value(
                 for (const Roll roll_2 : rolls_2)
                 {
                     // iterate over all damage rolls
-                    const mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
-                    const mpq_class crit_roll_prob = crit_prob * roll_probs;
+                    mpq_class roll_probs{roll_1.n * roll_2.n, 39 * 39};
+                    roll_probs.canonicalize();
+                    mpq_class crit_roll_prob = crit_prob * roll_probs;
+                    crit_roll_prob.canonicalize();
 
-                    // total_prob += crit_roll_prob;
+                    total_prob += crit_roll_prob;
+                    total_prob.canonicalize();
 
                     const HP_T post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
                     const HP_T post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
@@ -261,6 +315,7 @@ mpq_class q_value(
                         {
                             value += crit_roll_prob;
                         }
+                        value.canonicalize();
                         continue;
                     }
                     if (p2_ko_win)
@@ -269,41 +324,98 @@ mpq_class q_value(
                         continue;
                     }
 
+                    int r1 = (move_1.must_recharge && hit_1) ? 1 : 0;
+                    int r2 = (move_2.must_recharge && hit_2) ? 1 : 0;
+
                     State child{
                         post_hp_1,
                         post_hp_2,
-                        move_1.must_recharge && hit_1,
-                        move_2.must_recharge && hit_2};
+                        r1,
+                        r2};
 
                     if (child != state)
                     {
-                        const mpq_class weighted_solved_value = crit_roll_prob * lookup_value(tables, child);
+                        mpq_class lv = lookup_value(tables, child);
+                        if (lv == mpq_class{0})
+                        {
+                            std::cout << '!' << std::endl;
+                            print_state(state);
+                            print_state(child);
+                            std::cout << move_1.id << ' ' << move_2.id << std::endl;
+                            assert(false);
+                            exit(1);
+                        }
+                        const mpq_class weighted_solved_value = crit_roll_prob * lv;
+                        // std::cout << "LOOKUP" << std::endl;
+                        // print_state(child);
+                        // std::cout << crit_roll_prob.get_str() << std::endl;
+                        // std::cout << lv.get_str() << std::endl;
+
                         value += weighted_solved_value;
-                    } else {
+                    }
+                    else
+                    {
                         reflexive_prob += crit_roll_prob;
+                        reflexive_prob.canonicalize();
                     }
                 }
             }
         }
     }
 
-    if (reflexive_prob > mpq_class{0}) {
-        assert(state.recharge_1 == false && state.recharge_2 == false);
-        // only S00 should have this
+    if (total_prob != mpq_class(1))
+    {
+        std::cout << total_prob.get_str() << std::endl;
+        std::cout << move_1.id << ' ' << move_2.id << std::endl;
+        assert(false);
+        exit(1);
     }
 
-    return value / (mpq_class{1} - reflexive_prob);
+    if (reflexive_prob > mpq_class{0})
+    {
+        if (state.recharge_1 || state.recharge_2)
+        {
+            std::cout << "reflexive assert fail" << std::endl;
+            std::cout << reflexive_prob.get_str() << std::endl;
+            std::cout << move_1.id << ' ' << move_2.id << std::endl;
+            assert(false);
+            exit(1);
+        }
+        // only S00 should have this
+    }
+    mpq_class x = value / (mpq_class{1} - reflexive_prob);
+    x.canonicalize();
+
+    if (state.hp_1 == state.hp_2)
+    {
+        if (move_1.id == move_2.id)
+        {
+            if (x != mpq_class{1, 2})
+            {
+                std::cout << "mirror q fail" << std::endl;
+                std::cout << move_1.id << ' ' << move_2.id << std::endl;
+                std::cout << x.get_str() << std::endl;
+                assert(false);
+                exit(1);
+            }
+        }
+    }
+
+    return x;
 }
 void solve_state(
     Solution &tables,
     const State &state)
 {
+    // pinyon ftw!!!
     using Types = DefaultTypes<mpq_class, int, int, mpq_class, ConstantSum<1, 1>::Value>;
 
-    // get legal moves
-    std::vector<int> p1_legal_moves = state.recharge_1 ? std::vector<int>{4} : std::vector<int>{0, 1, 2, 3};
-    std::vector<int> p2_legal_moves = state.recharge_2 ? std::vector<int>{4} : std::vector<int>{0, 1, 2, 3};
+    const std::vector<int> legal0 = {0, 1, 2, 3};
+    const std::vector<int> legal1 = {4};
 
+    // get legal moves
+    std::vector<int> p1_legal_moves = (state.recharge_1 > 0) ? legal1 : legal0;
+    std::vector<int> p2_legal_moves = (state.recharge_2 > 0) ? legal1 : legal0;
     const size_t rows = p1_legal_moves.size();
     const size_t cols = p2_legal_moves.size();
 
@@ -327,9 +439,12 @@ void solve_state(
     Types::VectorReal col_strategy{cols};
 
     auto value = LRSNash::solve(payoff_matrix, row_strategy, col_strategy);
-    SolutionEntry &entry = tables.data[state.hp_1 - 1][state.hp_2 - 1][state.recharge_1 * 2 + state.recharge_2];
-
+    SolutionEntry &entry = get_entry(tables, state);
     entry.value = value.get_row_value().get();
+
+    // std::cout << "INPUT" << std::endl;
+    // print_state(state);
+    // std::cout << "value: " << entry.value.get_d() << std::endl;
 
     for (int row_idx = 0; row_idx < rows; ++row_idx)
     {
@@ -345,8 +460,9 @@ void solve_state(
 void total_solve(
     Solution &tables)
 {
+    // const int last_save = BODY_SLAM.rolls[0].dmg;
     const int last_save = 0;
-    const int new_save = 30;
+    const int new_save = MAX_HP;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
     {
@@ -356,16 +472,67 @@ void total_solve(
             // Solve
 
             const State state_00{hp_1, hp_2, false, false};
-            const State state_01{hp_1, hp_2, false, true};
-            const State state_10{hp_1, hp_2, true, false};
+            const State state_01{hp_1, hp_2, true, false};
+            const State state_10{hp_1, hp_2, false, true};
 
             solve_state(tables, state_00);
             solve_state(tables, state_01);
             solve_state(tables, state_10);
 
+            SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1];
+            if (hp_1 == hp_2)
+            {
+                if ((entries[0].value != mpq_class{1, 2}))
+                {
+                    std::cout << "s00 not 1/2 for same hp" << std::endl;
+                    assert(false);
+                    exit(1);
+                }
+                if (entries[1].value + entries[2].value != mpq_class{1})
+                {
+                    std::cout << "s01 doesnt mirror s10" << std::endl;
+                    assert(false);
+                    exit(1);
+                }
+            }
+
             // progress report
-            print_state(state_00);
-            std::cout << " : " << tables.data[hp_1 - 1][hp_2 - 1][0].value.get_str() << std::endl;
+            {
+                std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
+                std::cout << "00 : " << entries[0].value.get_str() << " = " << entries[0].value.get_d() << std::endl;
+                std::cout << "01 : " << entries[1].value.get_str() << " = " << entries[1].value.get_d() << std::endl;
+                std::cout << "10 : " << entries[2].value.get_str() << " = " << entries[2].value.get_d() << std::endl;
+                std::cout << "STRATEGIES:" << std::endl;
+                for (int i = 0; i < 4; ++i)
+                {
+                    std::cout << entries[0].p1_strategy[i] << ' ';
+                }
+                std::cout << std::endl;
+                for (int i = 0; i < 4; ++i)
+                {
+                    std::cout << entries[0].p2_strategy[i] << ' ';
+                }
+                std::cout << std::endl;
+            };
+
+            // file output
+            {
+                OUTPUT_FILE << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
+                OUTPUT_FILE << "00 : " << entries[0].value.get_str() << " = " << entries[0].value.get_d() << std::endl;
+                OUTPUT_FILE << "01 : " << entries[1].value.get_str() << " = " << entries[1].value.get_d() << std::endl;
+                OUTPUT_FILE << "10 : " << entries[2].value.get_str() << " = " << entries[2].value.get_d() << std::endl;
+                OUTPUT_FILE << "STRATEGIES:" << std::endl;
+                for (int i = 0; i < 4; ++i)
+                {
+                    OUTPUT_FILE << entries[0].p1_strategy[i] << ' ';
+                }
+                OUTPUT_FILE << std::endl;
+                for (int i = 0; i < 4; ++i)
+                {
+                    OUTPUT_FILE << entries[0].p2_strategy[i] << ' ';
+                }
+                OUTPUT_FILE << std::endl;
+            };
         }
     }
 }
@@ -374,9 +541,11 @@ int main()
 {
     Solution *tables_ptr = new Solution();
     Solution &tables = *tables_ptr;
+    // init_tables(tables);
 
     const size_t table_size_bytes = sizeof(tables);
-    std::cout << "SOLUTION TABLE SIZE (MB): " << (table_size_bytes >> 20) << std::endl << std::endl;
+    std::cout << "SOLUTION TABLE SIZE (MB): " << (table_size_bytes >> 20) << std::endl
+              << std::endl;
 
     total_solve(tables);
 
