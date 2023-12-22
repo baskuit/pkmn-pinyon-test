@@ -72,6 +72,17 @@ const Move BLIZZARD{
     false,
     true};
 
+const Move EARTHQUAKE{
+    "Earthquake",
+    mpq_class{255, 256},
+    mpq_class{1, 256},
+    mpq_class{0, 1},
+    mpq_class{1, 1},
+    {{74, 1}, {75, 3}, {76, 3}, {77, 3}, {78, 2}, {79, 3}, {80, 3}, {81, 3}, {82, 3}, {83, 3}, {84, 3}, {85, 3}, {86, 3}, {87, 2}, {88, 1}},
+    {{144, 1}, {145, 1}, {146, 2}, {147, 1}, {148, 2}, {149, 1}, {150, 2}, {151, 1}, {152, 2}, {153, 1}, {154, 2}, {155, 1}, {156, 2}, {157, 1}, {158, 2}, {159, 1}, {160, 2}, {161, 1}, {162, 2}, {163, 1}, {164, 2}, {165, 1}, {166, 2}, {167, 1}, {168, 2}, {169, 1}, {170, 1}},
+    false,
+    false};
+
 const Move RECHARGE{
     "Recharge",
     mpq_class{0, 1},
@@ -87,7 +98,7 @@ const std::array<const Move *, 5> MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &BODY_SLAM,
+    &EARTHQUAKE,
     &RECHARGE};
 
 using HP_T = uint16_t;
@@ -249,29 +260,6 @@ mpq_class q_value(
         const bool p1_frz_win = move_1.may_freeze && hit_1 && proc_1;
         const bool p2_frz_win = move_2.may_freeze && hit_2 && proc_2;
 
-        if (p1_frz_win)
-        {
-            total_prob += hit_proc_prob;
-            total_prob.canonicalize();
-            if (p2_frz_win)
-            {
-                value += hit_proc_prob * mpq_class{1, 2};
-            }
-            else
-            {
-                value += hit_proc_prob;
-            }
-            value.canonicalize();
-            continue;
-        }
-        if (p2_frz_win)
-        {
-            total_prob += hit_proc_prob;
-            total_prob.canonicalize();
-            // value += mpq_class{};
-            continue;
-        }
-
         for (int j = 0; j < 4; ++j)
         {
             // iterate over crit checks
@@ -302,8 +290,8 @@ mpq_class q_value(
                     const HP_T post_hp_1 = std::max(state.hp_1 - roll_2.dmg * hit_2, 0);
                     const HP_T post_hp_2 = std::max(state.hp_2 - roll_1.dmg * hit_1, 0);
 
-                    const bool p1_ko_win = (post_hp_2 == 0);
-                    const bool p2_ko_win = (post_hp_1 == 0);
+                    const bool p1_ko_win = (post_hp_2 == 0) || p1_frz_win;
+                    const bool p2_ko_win = (post_hp_1 == 0) || p2_frz_win;
 
                     if (p1_ko_win)
                     {
@@ -442,10 +430,6 @@ void solve_state(
     SolutionEntry &entry = get_entry(tables, state);
     entry.value = value.get_row_value().get();
 
-    // std::cout << "INPUT" << std::endl;
-    // print_state(state);
-    // std::cout << "value: " << entry.value.get_d() << std::endl;
-
     for (int row_idx = 0; row_idx < rows; ++row_idx)
     {
         entry.p1_strategy[row_idx] = row_strategy[row_idx].get().get_d();
@@ -460,8 +444,8 @@ void solve_state(
 void total_solve(
     Solution &tables)
 {
-    // const int last_save = BODY_SLAM.rolls[0].dmg;
-    const int last_save = 0;
+    const int last_save = BODY_SLAM.rolls[0].dmg;
+    // const int last_save = 0;
     const int new_save = MAX_HP;
 
     for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
@@ -537,11 +521,36 @@ void total_solve(
     }
 }
 
+void move_rolls_assert()
+{
+    for (const Move *move : MOVES)
+    {
+        int a = 0;
+        int b = 0;
+        for (const auto roll : move->rolls)
+        {
+            a += roll.n;
+        }
+        for (const auto roll : move->crit_rolls)
+        {
+            b += roll.n;
+        }
+        assert(a == 39);
+        assert(b == 39);
+        if ((a != 39) || (b != 39))
+        {
+            exit(1);
+        }
+    }
+}
+
 int main()
 {
+    move_rolls_assert();
+
     Solution *tables_ptr = new Solution();
     Solution &tables = *tables_ptr;
-    // init_tables(tables);
+    init_tables(tables);
 
     const size_t table_size_bytes = sizeof(tables);
     std::cout << "SOLUTION TABLE SIZE (MB): " << (table_size_bytes >> 20) << std::endl
