@@ -11,6 +11,8 @@ std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
 
 const size_t MAX_HP = 353;
 
+const HP_T BURN_DMG = 0;
+
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
 
@@ -26,13 +28,13 @@ struct Move
     // probabilities. I assume (1 - p) can't be optimized if we use libgmp, so I double up
     mpq_class acc;
     mpq_class one_minus_acc;
-    mpq_class frz;
-    mpq_class one_minus_frz;
+    mpq_class eff;
+    mpq_class one_minus_eff;
 
     // recharge gets one 0 dmg roll
     std::vector<Roll> rolls;
     std::vector<Roll> crit_rolls;
-    // std::vector<Roll> burned_rolls;
+    std::vector<Roll> burned_rolls;
     bool must_recharge;
     bool may_freeze;
     // bool may_burn;
@@ -46,6 +48,7 @@ const Move BODY_SLAM{
     mpq_class{1, 1},
     {{95, 2}, {96, 2}, {97, 3}, {98, 2}, {99, 2}, {100, 2}, {101, 3}, {102, 2}, {103, 2}, {104, 3}, {105, 2}, {106, 2}, {107, 2}, {108, 3}, {109, 2}, {110, 2}, {111, 2}, {112, 1}},
     {{184, 1}, {185, 1}, {186, 1}, {187, 1}, {188, 2}, {189, 1}, {190, 1}, {191, 1}, {192, 1}, {193, 1}, {194, 2}, {195, 1}, {196, 1}, {197, 1}, {198, 1}, {199, 2}, {200, 1}, {201, 1}, {202, 1}, {203, 1}, {204, 1}, {205, 2}, {206, 1}, {207, 1}, {208, 1}, {209, 1}, {210, 1}, {211, 2}, {212, 1}, {213, 1}, {214, 1}, {215, 1}, {216, 1}, {217, 1}},
+    {{48, 3}, {49, 4}, {50, 5}, {51, 4}, {52, 5}, {53, 4}, {54, 5}, {55, 4}, {56, 4}, {57, 1}},
     false,
     false};
 
@@ -57,6 +60,7 @@ const Move HYPER_BEAM{
     mpq_class{1, 1},
     {{166, 1}, {167, 1}, {168, 1}, {169, 2}, {170, 1}, {171, 1}, {172, 2}, {173, 1}, {174, 1}, {175, 1}, {176, 2}, {177, 1}, {178, 1}, {179, 2}, {180, 1}, {181, 1}, {182, 2}, {183, 1}, {184, 1}, {185, 1}, {186, 2}, {187, 1}, {188, 1}, {189, 2}, {190, 1}, {191, 1}, {192, 2}, {193, 1}, {194, 1}, {195, 1}, {196, 1}},
     {{324, 1}, {325, 1}, {327, 1}, {328, 1}, {330, 1}, {331, 1}, {333, 1}, {334, 1}, {336, 1}, {337, 1}, {339, 1}, {340, 1}, {342, 1}, {343, 1}, {345, 1}, {346, 1}, {348, 1}, {349, 1}, {351, 1}, {352, 1}, {354, 1}, {355, 1}, {357, 1}, {358, 1}, {360, 1}, {361, 1}, {363, 1}, {364, 1}, {366, 1}, {367, 1}, {369, 1}, {370, 1}, {372, 1}, {373, 1}, {375, 1}, {376, 1}, {378, 1}, {379, 1}, {381, 1}},
+    {{48, 3}, {49, 4}, {50, 5}, {51, 4}, {52, 5}, {53, 4}, {54, 5}, {55, 4}, {56, 4}, {57, 1}},
     true,
     false};
 
@@ -68,6 +72,7 @@ const Move BLIZZARD{
     mpq_class{1, 1},
     {{86, 1}, {87, 2}, {88, 3}, {89, 2}, {90, 3}, {91, 2}, {92, 3}, {93, 2}, {94, 3}, {95, 2}, {96, 3}, {97, 2}, {98, 3}, {99, 2}, {100, 3}, {101, 2}, {102, 1}},
     {{168, 1}, {169, 1}, {170, 2}, {171, 1}, {172, 1}, {173, 2}, {174, 1}, {175, 1}, {176, 1}, {177, 2}, {178, 1}, {179, 1}, {180, 2}, {181, 1}, {182, 1}, {183, 1}, {184, 2}, {185, 1}, {186, 1}, {187, 2}, {188, 1}, {189, 1}, {190, 1}, {191, 2}, {192, 1}, {193, 1}, {194, 2}, {195, 1}, {196, 1}, {197, 1}, {198, 1}},
+    {{86, 1}, {87, 2}, {88, 3}, {89, 2}, {90, 3}, {91, 2}, {92, 3}, {93, 2}, {94, 3}, {95, 2}, {96, 3}, {97, 2}, {98, 3}, {99, 2}, {100, 3}, {101, 2}, {102, 1}},
     false,
     true};
 
@@ -79,6 +84,7 @@ const Move EARTHQUAKE{
     mpq_class{1, 1},
     {{74, 1}, {75, 3}, {76, 3}, {77, 3}, {78, 2}, {79, 3}, {80, 3}, {81, 3}, {82, 3}, {83, 3}, {84, 3}, {85, 3}, {86, 3}, {87, 2}, {88, 1}},
     {{144, 1}, {145, 1}, {146, 2}, {147, 1}, {148, 2}, {149, 1}, {150, 2}, {151, 1}, {152, 2}, {153, 1}, {154, 2}, {155, 1}, {156, 2}, {157, 1}, {158, 2}, {159, 1}, {160, 2}, {161, 1}, {162, 2}, {163, 1}, {164, 2}, {165, 1}, {166, 2}, {167, 1}, {168, 2}, {169, 1}, {170, 1}},
+    {{38, 4}, {39, 6}, {40, 6}, {41, 5}, {42, 6}, {43, 6}, {44, 4}, {45, 1}},
     false,
     false};
 
@@ -88,6 +94,7 @@ const Move RECHARGE{
     mpq_class{1, 1},
     mpq_class{0, 1},
     mpq_class{1, 1},
+    {{0, 39}},
     {{0, 39}},
     {{0, 39}},
     false,
@@ -108,6 +115,8 @@ struct State
     HP_T hp_2;
     int recharge_1;
     int recharge_2;
+    int burned_1 = false;
+    int burned_2 = false;
 
     State() {}
 
@@ -226,13 +235,142 @@ mpq_class q_value(
 {
     mpq_class value{0};
     mpq_class reflexive_prob{0};
-
-    const Move &move_1 = *MOVES[move_1_idx];
-    const Move &move_2 = *MOVES[move_2_idx];
-
-    // Debug only
-    // State hashes in, prob of encountering out
     mpq_class total_prob{0};
+
+    for (int i = 0; i < 128; ++i)
+    {
+        const bool hit_1 = i & 1;
+        const bool hit_2 = i & 2;
+        const bool crit_1 = i & 4;
+        const bool crit_2 = i & 8;
+        const bool proc_1 = i & 16;
+        const bool proc_2 = i & 32;
+        const bool flipped = i & 64;
+
+        // turn order
+        int t1_hp = flipped ? state.hp_2 : state.hp_1;
+        int t2_hp = flipped ? state.hp_1 : state.hp_2;
+        const int t1_burned = flipped ? state.burned_2 : state.burned_1;
+        const int t2_burned = flipped ? state.burned_1 : state.burned_2;
+
+        const Move &m1 = *MOVES[i ? move_1_idx : move_2_idx];
+        const Move &m2 = *MOVES[i ? move_2_idx : move_1_idx];
+
+        const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze;
+        const bool brn_t1 = hit_1 && proc_1 && m1.may_burn;
+        // const bool flinched_t2 = hit_1 && proc_1 && m1.may_flinch;
+
+        mpq_class t1_prob_no_roll = (hit_1 ? m1.acc : m1.one_minus_acc) * (crit_1 ? CRIT : NO_CRIT) * (proc_1 ? m1.eff : m1.one_minus_eff);
+        t1_prob_no_roll.canonicalize();
+
+        if (frz_t1)
+        {
+            if (!flipped)
+            {
+                value += t1_prob_no_roll;
+            }
+            else
+            {
+                // value += mpq_class(1) - t1_prob_no_roll;
+            }
+            value.canonicalize();
+            total_prob += t1_prob_no_roll;
+            total_prob.canonicalize();
+            continue;
+        }
+
+        const std::vector<Roll> &rolls_t1 = hit_1 ? (crit_1 ? m1.crit_rolls : (t1_burned ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
+        const std::vector<Roll> &rolls_t2 = hit_2 ? (crit_2 ? m2.crit_rolls : ((t2_burned || brn_t1) ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
+
+        for (const Roll roll_1 : rolls_t1)
+        {
+            t2_hp = std::max(t2_hp - roll_1.dmg * hit_1, 0);
+            const bool p1_ko_win = (t1_hp == 0);
+
+            mpq_class t1_roll_prob = t1_prob_no_roll * mpq_class{roll_1.n, 39};
+            t1_roll_prob.canonicalize();
+
+            if (p1_ko_win)
+            {
+                if (!flipped)
+                {
+                    value += t1_roll_prob;
+                }
+                else
+                {
+                    // value += mpq_class(1) - t1_roll_prob;
+                }
+                value.canonicalize();
+                continue;
+            }
+
+            t1_hp = std::max(t1_hp - t1_burned * BURN_DMG, 0);
+
+            if (t1_hp == 0)
+            {
+                if (!flipped)
+                {
+                }
+                else
+                {
+                    value += t1_roll_prob;
+                }
+                value.canonicalize();
+                continue;
+            }
+
+            for (const Roll roll_2 : rolls_t2)
+            {
+                t1_hp = std::max(t1_hp - roll_2.dmg * hit_2, 0);
+
+                if (t1_hp == 0)
+                {
+                    if (!flipped)
+                    {
+                        value += t1_roll_prob;
+                    }
+                    else
+                    {
+                        // value += mpq_class(1) - t1_roll_prob;
+                    }
+                    value.canonicalize();
+                    continue;
+                }
+
+                t2_hp = std::max(t2_hp - (t2_burned || brn_t1) * BURN_DMG, 0);
+
+                if (t2_hp == 0)
+                {
+                    if (!flipped)
+                    {
+                    }
+                    else
+                    {
+                        value += t1_roll_prob;
+                    }
+                    value.canonicalize();
+                    continue;
+                }
+
+                // No KOs or freeze
+
+                if (!flipped)
+                {
+                    const State child{
+                        t1_hp,
+                        t2_hp,
+                        hit_1 && m1.must_recharge,
+                        hit_2 && m2.must_recharge,
+                        t1_burned,
+                        t2_burned
+                    };
+                }
+                else
+                {
+                }
+            }
+        }
+    }
 
     for (int i = 0; i < 16; ++i)
     {
@@ -245,8 +383,8 @@ mpq_class q_value(
         // corresponding probs
         const mpq_class acc_1 = hit_1 ? move_1.acc : move_1.one_minus_acc;
         const mpq_class acc_2 = hit_2 ? move_2.acc : move_2.one_minus_acc;
-        const mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_frz;
-        const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_frz;
+        const mpq_class frz_1 = proc_1 ? move_1.frz : move_1.one_minus_eff;
+        const mpq_class frz_2 = proc_2 ? move_2.frz : move_2.one_minus_eff;
 
         mpq_class hit_proc_prob = acc_1 * acc_2 * frz_1 * frz_2;
         hit_proc_prob.canonicalize();
