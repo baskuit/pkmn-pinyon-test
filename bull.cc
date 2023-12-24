@@ -11,16 +11,14 @@ std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
 
 const size_t MAX_HP = 353;
 
-using HP_T = int;
-
-const HP_T BURN_DMG = MAX_HP / 16;
+const int BURN_DMG = MAX_HP / 16;
 
 const mpq_class CRIT{55, 256};
 const mpq_class NO_CRIT{201, 256};
 
 struct Roll
 {
-    HP_T dmg;
+    int dmg;
     int n;
 };
 
@@ -40,6 +38,7 @@ struct Move
     bool must_recharge;
     bool may_freeze;
     bool may_burn;
+    bool may_flinch;
 };
 
 const Move BODY_SLAM{
@@ -51,6 +50,7 @@ const Move BODY_SLAM{
     {{95, 2}, {96, 2}, {97, 3}, {98, 2}, {99, 2}, {100, 2}, {101, 3}, {102, 2}, {103, 2}, {104, 3}, {105, 2}, {106, 2}, {107, 2}, {108, 3}, {109, 2}, {110, 2}, {111, 2}, {112, 1}},
     {{184, 1}, {185, 1}, {186, 1}, {187, 1}, {188, 2}, {189, 1}, {190, 1}, {191, 1}, {192, 1}, {193, 1}, {194, 2}, {195, 1}, {196, 1}, {197, 1}, {198, 1}, {199, 2}, {200, 1}, {201, 1}, {202, 1}, {203, 1}, {204, 1}, {205, 2}, {206, 1}, {207, 1}, {208, 1}, {209, 1}, {210, 1}, {211, 2}, {212, 1}, {213, 1}, {214, 1}, {215, 1}, {216, 1}, {217, 1}},
     {{48, 3}, {49, 4}, {50, 5}, {51, 4}, {52, 5}, {53, 4}, {54, 5}, {55, 4}, {56, 4}, {57, 1}},
+    false,
     false,
     false,
     false};
@@ -66,6 +66,7 @@ const Move HYPER_BEAM{
     {{84, 2}, {85, 3}, {86, 3}, {87, 2}, {88, 3}, {89, 2}, {90, 3}, {91, 2}, {92, 3}, {93, 3}, {94, 2}, {95, 3}, {96, 2}, {97, 3}, {98, 2}, {99, 1}},
     true,
     false,
+    false,
     false};
 
 const Move BLIZZARD{
@@ -79,6 +80,7 @@ const Move BLIZZARD{
     {{86, 1}, {87, 2}, {88, 3}, {89, 2}, {90, 3}, {91, 2}, {92, 3}, {93, 2}, {94, 3}, {95, 2}, {96, 3}, {97, 2}, {98, 3}, {99, 2}, {100, 3}, {101, 2}, {102, 1}},
     false,
     true,
+    false,
     false};
 
 const Move EARTHQUAKE{
@@ -90,6 +92,7 @@ const Move EARTHQUAKE{
     {{74, 1}, {75, 3}, {76, 3}, {77, 3}, {78, 2}, {79, 3}, {80, 3}, {81, 3}, {82, 3}, {83, 3}, {84, 3}, {85, 3}, {86, 3}, {87, 2}, {88, 1}},
     {{144, 1}, {145, 1}, {146, 2}, {147, 1}, {148, 2}, {149, 1}, {150, 2}, {151, 1}, {152, 2}, {153, 1}, {154, 2}, {155, 1}, {156, 2}, {157, 1}, {158, 2}, {159, 1}, {160, 2}, {161, 1}, {162, 2}, {163, 1}, {164, 2}, {165, 1}, {166, 2}, {167, 1}, {168, 2}, {169, 1}, {170, 1}},
     {{38, 4}, {39, 6}, {40, 6}, {41, 5}, {42, 6}, {43, 6}, {44, 4}, {45, 1}},
+    false,
     false,
     false,
     false};
@@ -105,6 +108,22 @@ const Move FIRE_BLAST{
     {{86, 1}, {87, 2}, {88, 3}, {89, 2}, {90, 3}, {91, 2}, {92, 3}, {93, 2}, {94, 3}, {95, 2}, {96, 3}, {97, 2}, {98, 3}, {99, 2}, {100, 3}, {101, 2}, {102, 1}},
     false,
     false,
+    true,
+    false};
+
+// TODO fix rolls
+const Move STOMP{
+    "Stomp",
+    mpq_class{255, 256},
+    mpq_class{1, 256},
+    mpq_class{0, 1},
+    mpq_class{1, 1},
+    {{95, 2}, {96, 2}, {97, 3}, {98, 2}, {99, 2}, {100, 2}, {101, 3}, {102, 2}, {103, 2}, {104, 3}, {105, 2}, {106, 2}, {107, 2}, {108, 3}, {109, 2}, {110, 2}, {111, 2}, {112, 1}},
+    {{184, 1}, {185, 1}, {186, 1}, {187, 1}, {188, 2}, {189, 1}, {190, 1}, {191, 1}, {192, 1}, {193, 1}, {194, 2}, {195, 1}, {196, 1}, {197, 1}, {198, 1}, {199, 2}, {200, 1}, {201, 1}, {202, 1}, {203, 1}, {204, 1}, {205, 2}, {206, 1}, {207, 1}, {208, 1}, {209, 1}, {210, 1}, {211, 2}, {212, 1}, {213, 1}, {214, 1}, {215, 1}, {216, 1}, {217, 1}},
+    {{48, 3}, {49, 4}, {50, 5}, {51, 4}, {52, 5}, {53, 4}, {54, 5}, {55, 4}, {56, 4}, {57, 1}},
+    false,
+    false,
+    false,
     true};
 
 const Move RECHARGE{
@@ -118,8 +137,10 @@ const Move RECHARGE{
     {{0, 39}},
     false,
     false,
+    false,
     false};
 
+// TODO add p1/p2 movesets
 const std::array<const Move *, 5> MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
@@ -129,8 +150,8 @@ const std::array<const Move *, 5> MOVES{
 
 struct State
 {
-    HP_T hp_1;
-    HP_T hp_2;
+    int hp_1;
+    int hp_2;
     int burned_1;
     int burned_2;
     int recharge_1;
@@ -139,8 +160,8 @@ struct State
     State() {}
 
     State(
-        const HP_T hp_1,
-        const HP_T hp_2,
+        const int hp_1,
+        const int hp_2,
         const int burned_1,
         const int burned_2,
         const int recharge_1,
@@ -165,7 +186,7 @@ struct State
 void print_state(
     const State &state)
 {
-    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.burned_1 << ' ' << state.burned_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << ' ' << std::endl;
+    std::cout << state.hp_1 << ' ' << state.hp_2 << ' ' << state.burned_1 << ' ' << state.burned_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
 }
 
 struct SolutionEntry
@@ -175,27 +196,26 @@ struct SolutionEntry
     float p2_strategy[4];
 };
 
-// using Solution = SolutionEntry[MAX_HP][MAX_HP][3];
-
 struct Solution
 {
     SolutionEntry data[MAX_HP][MAX_HP][2][2][3];
 };
 
-void init_tables(
-    Solution &tables)
-{
-    for (int hp_1 = 1; hp_1 <= BODY_SLAM.rolls[0].dmg; ++hp_1)
-    {
-        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
-        {
-            SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][0][0];
-            entries[0].value = mpq_class{1, 2};
-            entries[1].value = mpq_class{1, 512};
-            entries[2].value = mpq_class{511, 512};
-        }
-    }
-}
+// Burn complicates things
+// void init_tables(
+//     Solution &tables)
+// {
+//     for (int hp_1 = 1; hp_1 <= BODY_SLAM.rolls[0].dmg; ++hp_1)
+//     {
+//         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+//         {
+//             SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][0][0];
+//             entries[0].value = mpq_class{1, 2};
+//             entries[1].value = mpq_class{1, 512};
+//             entries[2].value = mpq_class{511, 512};
+//         }
+//     }
+// }
 
 SolutionEntry &get_entry(
     Solution &tables,
@@ -274,8 +294,8 @@ mpq_class q_value(
         const bool flipped = i & 64;
 
         // also in turn order
-        HP_T t1_hp = flipped ? state.hp_2 : state.hp_1;
-        HP_T t2_hp = flipped ? state.hp_1 : state.hp_2;
+        int t1_hp = flipped ? state.hp_2 : state.hp_1;
+        int t2_hp = flipped ? state.hp_1 : state.hp_2;
         const int t1_already_burned = flipped ? state.burned_2 : state.burned_1;
         const int t2_already_burned = flipped ? state.burned_1 : state.burned_2;
 
@@ -286,8 +306,8 @@ mpq_class q_value(
         const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze;
         const bool brn_t1 = hit_1 && proc_1 && m1.may_burn;
         const bool brn_t2 = hit_2 && proc_2 && m2.may_burn;
-
-        // const bool flinched_t2 = hit_1 && proc_1 && m1.may_flinch;
+        const bool flinch_t1 = hit_1 && proc_1 && m1.may_flinch;
+        // TODO add logic for skipping t2 - does flinch cause burn damage to be skipped? lol
 
         mpq_class t1_prob_no_roll =
             mpq_class{1, 2} *
@@ -479,20 +499,19 @@ mpq_class q_value(
     mpq_class real_value = value / (mpq_class{1} - reflexive_prob);
     real_value.canonicalize();
 
-    // if (state.hp_1 == state.hp_2)
-    // {
-    //     if ( == m2.id)
-    //     {
-    //         if (x != mpq_class{1, 2})
-    //         {
-    //             std::cout << "mirror q fail" << std::endl;
-    //             std::cout << move_1.id << ' ' << move_2.id << std::endl;
-    //             std::cout << x.get_str() << std::endl;
-    //             assert(false);
-    //             exit(1);
-    //         }
-    //     }
-    // }
+    if ((state.hp_1 == state.hp_2) && (state.burned_1 == state.burned_2))
+    {
+        if (move_1_idx == move_2_idx)
+        {
+            if (real_value != mpq_class{1, 2})
+            {
+                std::cout << "mirror q fail" << std::endl;
+                std::cout << real_value.get_str() << std::endl;
+                assert(false);
+                exit(1);
+            }
+        }
+    }
 
     return real_value;
 }
@@ -526,11 +545,6 @@ void solve_state(
 
     // solve
 
-    std::cout << "SOLVING, PRINTING STATE AND PAYOFF MATRIX" << std::endl;
-    print_state(state);
-    payoff_matrix.print();
-    std::cout << std::endl;
-
     Types::VectorReal row_strategy{rows};
     Types::VectorReal col_strategy{cols};
 
@@ -552,13 +566,10 @@ void solve_state(
 void total_solve(
     Solution &tables)
 {
-    // const int last_save = BODY_SLAM.rolls[0].dmg;
-    const int last_save = 0;
-    const int new_save = MAX_HP;
 
-    for (uint16_t hp_1 = last_save + 1; hp_1 <= new_save; ++hp_1)
+    for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
     {
-        for (uint16_t hp_2 = 1; hp_2 <= hp_1; ++hp_2)
+        for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
             for (int b = 0; b < 4; ++b)
             {
@@ -575,6 +586,7 @@ void total_solve(
                 solve_state(tables, state_01);
                 solve_state(tables, state_10);
 
+                // assert
                 SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][burned_1][burned_2];
                 if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
                 {
@@ -593,47 +605,67 @@ void total_solve(
                 }
 
                 // progress report
+
+                for (int r = 0; r < 3; ++r)
                 {
-                    for (int r = 0; r < 3; ++r)
+                    const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
+                    std::cout
+                        << "HP: " << state.hp_1 << ' ' << state.hp_2
+                        << " BURN: " << state.burned_1 << ' ' << state.burned_2
+                        << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
+                    std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                    std::cout << "STRATEGIES:" << std::endl;
+                    if (r % 2 == 0)
                     {
-                        const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                        print_state(state);
-                        std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                        std::cout << "STRATEGIES:" << std::endl;
                         for (int i = 0; i < 4; ++i)
                         {
-                            std::cout << entries[r].p1_strategy[i] << ' ';
+                            std::cout << MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
                         }
                         std::cout << std::endl;
+                    }
+                    if (r / 2 == 0)
+                    {
                         for (int i = 0; i < 4; ++i)
                         {
-                            std::cout << entries[r].p2_strategy[i] << ' ';
+                            std::cout << MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
                         }
                         std::cout << std::endl;
                     }
                 };
 
                 // file output
+
+                for (int r = 0; r < 3; ++r)
                 {
-                    for (int r = 0; r < 3; ++r)
+                    const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
+                    // print_state(state);
+                    OUTPUT_FILE
+                        << "HP: " << state.hp_1 << ' ' << state.hp_2
+                        << " BURN: " << state.burned_1 << ' ' << state.burned_2
+                        << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
+                    OUTPUT_FILE << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                    OUTPUT_FILE << "STRATEGIES:" << std::endl;
+                    if (r % 2 == 0)
                     {
-                        const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                        // print_state(state);
-                        OUTPUT_FILE << "STATE: " << state.hp_1 << ' ' << state.hp_2 << ' ' << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                        OUTPUT_FILE << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                        OUTPUT_FILE << "STRATEGIES:" << std::endl;
+                        OUTPUT_FILE << "P1: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            OUTPUT_FILE << entries[r].p1_strategy[i] << ' ';
-                        }
-                        OUTPUT_FILE << std::endl;
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            OUTPUT_FILE << entries[r].p2_strategy[i] << ' ';
+                            OUTPUT_FILE << MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
                         }
                         OUTPUT_FILE << std::endl;
                     }
-                };
+                    if (r / 2 == 0)
+                    {
+                        OUTPUT_FILE << "P2: ";
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            OUTPUT_FILE << MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                        }
+                        OUTPUT_FILE << std::endl;
+                    }
+                }
+
+                // end hp, burn loop
             }
         }
     }
@@ -672,7 +704,6 @@ int main()
 
     Solution *tables_ptr = new Solution();
     Solution &tables = *tables_ptr;
-    // init_tables(tables);
 
     const size_t table_size_bytes = sizeof(tables);
     std::cout << "SOLUTION TABLE SIZE (MB): " << (table_size_bytes >> 20) << std::endl
