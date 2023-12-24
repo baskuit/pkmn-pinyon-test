@@ -91,7 +91,7 @@ const Move EARTHQUAKE{
     mpq_class{1, 1},
     {{74, 1}, {75, 3}, {76, 3}, {77, 3}, {78, 2}, {79, 3}, {80, 3}, {81, 3}, {82, 3}, {83, 3}, {84, 3}, {85, 3}, {86, 3}, {87, 2}, {88, 1}},
     {{144, 1}, {145, 1}, {146, 2}, {147, 1}, {148, 2}, {149, 1}, {150, 2}, {151, 1}, {152, 2}, {153, 1}, {154, 2}, {155, 1}, {156, 2}, {157, 1}, {158, 2}, {159, 1}, {160, 2}, {161, 1}, {162, 2}, {163, 1}, {164, 2}, {165, 1}, {166, 2}, {167, 1}, {168, 2}, {169, 1}, {170, 1}},
-    {{38, 4}, {39, 6}, {40, 6}, {41, 5}, {42, 6}, {43, 6}, {44, 4}, {45, 1}},
+    {{38, 4}, {39, 6}, {40, 6}, {41, 5}, {42, 6}, {43, 6}, {44, 5}, {45, 1}},
     false,
     false,
     false,
@@ -118,9 +118,9 @@ const Move STOMP{
     mpq_class{1, 256},
     mpq_class{0, 1},
     mpq_class{1, 1},
-    {{95, 2}, {96, 2}, {97, 3}, {98, 2}, {99, 2}, {100, 2}, {101, 3}, {102, 2}, {103, 2}, {104, 3}, {105, 2}, {106, 2}, {107, 2}, {108, 3}, {109, 2}, {110, 2}, {111, 2}, {112, 1}},
-    {{184, 1}, {185, 1}, {186, 1}, {187, 1}, {188, 2}, {189, 1}, {190, 1}, {191, 1}, {192, 1}, {193, 1}, {194, 2}, {195, 1}, {196, 1}, {197, 1}, {198, 1}, {199, 2}, {200, 1}, {201, 1}, {202, 1}, {203, 1}, {204, 1}, {205, 2}, {206, 1}, {207, 1}, {208, 1}, {209, 1}, {210, 1}, {211, 2}, {212, 1}, {213, 1}, {214, 1}, {215, 1}, {216, 1}, {217, 1}},
-    {{48, 3}, {49, 4}, {50, 5}, {51, 4}, {52, 5}, {53, 4}, {54, 5}, {55, 4}, {56, 4}, {57, 1}},
+    {{74, 3}, {75, 3}, {76, 3}, {77, 3}, {78, 3}, {79, 3}, {80, 3}, {81, 3}, {82, 3}, {83, 3}, {84, 3}, {85, 3}, {86, 2}, {87, 1}},
+    {{141, 2}, {142, 1}, {143, 2}, {144, 1}, {145, 2}, {146, 1}, {147, 2}, {148, 1}, {149, 2}, {150, 1}, {151, 2}, {152, 2}, {153, 1}, {154, 2}, {155, 1}, {156, 2}, {157, 1}, {158, 2}, {159, 1}, {160, 2}, {161, 1}, {162, 2}, {163, 1}, {164, 2}, {165, 1}, {166, 1}},
+    {{38, 4}, {39, 6}, {40, 6}, {41, 5}, {42, 6}, {43, 6}, {44, 5}, {45, 1}},
     false,
     false,
     false,
@@ -140,12 +140,28 @@ const Move RECHARGE{
     false,
     false};
 
-// TODO add p1/p2 movesets
-const std::array<const Move *, 5> MOVES{
+const std::vector<const Move *> ALL_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
+    &EARTHQUAKE,
     &FIRE_BLAST,
+    &STOMP,
+    &RECHARGE};
+
+// TODO add p1/p2 movesets
+const std::array<const Move *, 5> P1_MOVES{
+    &BODY_SLAM,
+    &HYPER_BEAM,
+    &BLIZZARD,
+    &EARTHQUAKE,
+    &RECHARGE};
+
+const std::array<const Move *, 5> P2_MOVES{
+    &BODY_SLAM,
+    &HYPER_BEAM,
+    &BLIZZARD,
+    &EARTHQUAKE,
     &RECHARGE};
 
 struct State
@@ -299,14 +315,14 @@ mpq_class q_value(
         const int t1_already_burned = flipped ? state.burned_2 : state.burned_1;
         const int t2_already_burned = flipped ? state.burned_1 : state.burned_2;
 
-        const Move &m1 = *MOVES[flipped ? move_2_idx : move_1_idx];
-        const Move &m2 = *MOVES[flipped ? move_1_idx : move_2_idx];
+        const Move &m1 = flipped ? *P2_MOVES[move_2_idx] : *P1_MOVES[move_1_idx];
+        const Move &m2 = flipped ? *P1_MOVES[move_1_idx] : *P2_MOVES[move_2_idx];
 
-        const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze;
-        const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze;
-        const bool brn_t1 = hit_1 && proc_1 && m1.may_burn;
-        const bool brn_t2 = hit_2 && proc_2 && m2.may_burn;
         const bool flinch_t1 = hit_1 && proc_1 && m1.may_flinch;
+        const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze;
+        const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze && !flinch_t1;
+        const bool brn_t1 = hit_1 && proc_1 && m1.may_burn;
+        const bool brn_t2 = hit_2 && proc_2 && m2.may_burn && !flinch_t1;
         // TODO add logic for skipping t2 - does flinch cause burn damage to be skipped? lol
 
         mpq_class t1_prob_no_roll =
@@ -334,7 +350,7 @@ mpq_class q_value(
         }
 
         const std::vector<Roll> &rolls_t1 = hit_1 ? (crit_1 ? m1.crit_rolls : (t1_already_burned ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
-        const std::vector<Roll> &rolls_t2 = hit_2 ? (crit_2 ? m2.crit_rolls : ((t2_already_burned || brn_t1) ? m2.burned_rolls : m2.rolls)) : RECHARGE.rolls;
+        const std::vector<Roll> &rolls_t2 = (hit_2 && !flinch_t1) ? (crit_2 ? m2.crit_rolls : ((t2_already_burned || brn_t1) ? m2.burned_rolls : m2.rolls)) : RECHARGE.rolls;
 
         for (const Roll roll_1 : rolls_t1)
         {
@@ -454,15 +470,19 @@ mpq_class q_value(
                 if (child != state)
                 {
                     mpq_class lv = lookup_value(tables, child);
-                    if (lv == mpq_class{0})
-                    {
-                        std::cout << '!' << std::endl;
-                        print_state(state);
-                        print_state(child);
-                        // std::cout << move_1.id << ' ' << move_2.id << std::endl;
-                        assert(false);
-                        exit(1);
-                    }
+                    // faily good at catching bad lookups
+                    // I think in uninitialized mpq_class has 0 value by default
+                    // but sometimes, e.g. (1 1 1 0 1 0)
+                    // the value IS 0
+                    // if (lv == mpq_class{0})
+                    // {
+                    //     std::cout << '!' << std::endl;
+                    //     print_state(state);
+                    //     print_state(child);
+                    //     // std::cout << move_1.id << ' ' << move_2.id << std::endl;
+                    //     assert(false);
+                    //     exit(1);
+                    // }
                     const mpq_class weighted_solved_value = t2_roll_prob * lv;
                     value += weighted_solved_value;
                     value.canonicalize();
@@ -501,7 +521,7 @@ mpq_class q_value(
 
     if ((state.hp_1 == state.hp_2) && (state.burned_1 == state.burned_2))
     {
-        if (move_1_idx == move_2_idx)
+        if (P1_MOVES[move_1_idx] == P2_MOVES[move_2_idx])
         {
             if (real_value != mpq_class{1, 2})
             {
@@ -614,20 +634,21 @@ void total_solve(
                         << " BURN: " << state.burned_1 << ' ' << state.burned_2
                         << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
                     std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                    std::cout << "STRATEGIES:" << std::endl;
                     if (r % 2 == 0)
                     {
+                        std::cout << "P1: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            std::cout << MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                            std::cout << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
                         }
                         std::cout << std::endl;
                     }
                     if (r / 2 == 0)
                     {
+                        std::cout << "P2: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            std::cout << MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                            std::cout << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
                         }
                         std::cout << std::endl;
                     }
@@ -650,7 +671,7 @@ void total_solve(
                         OUTPUT_FILE << "P1: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            OUTPUT_FILE << MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                            OUTPUT_FILE << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
                         }
                         OUTPUT_FILE << std::endl;
                     }
@@ -659,7 +680,7 @@ void total_solve(
                         OUTPUT_FILE << "P2: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            OUTPUT_FILE << MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                            OUTPUT_FILE << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
                         }
                         OUTPUT_FILE << std::endl;
                     }
@@ -673,7 +694,7 @@ void total_solve(
 
 void move_rolls_assert()
 {
-    for (const Move *move : MOVES)
+    for (const Move *move : ALL_MOVES)
     {
         int a = 0;
         int b = 0;
