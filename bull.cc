@@ -131,21 +131,23 @@ struct State
 {
     HP_T hp_1;
     HP_T hp_2;
+    int burned_1;
+    int burned_2;
     int recharge_1;
     int recharge_2;
-    int burned_1 = 0;
-    int burned_2 = 0;
 
     State() {}
 
     State(
         const HP_T hp_1,
         const HP_T hp_2,
-        const int recharge_1,
-        const int recharge_2,
         const int burned_1,
-        const int burned_2)
-        : hp_1{hp_1}, hp_2{hp_2}, recharge_1{recharge_1}, recharge_2{recharge_2}, burned_1{burned_1}, burned_2{burned_2}
+        const int burned_2,
+        const int recharge_1,
+        const int recharge_2)
+        : hp_1{hp_1}, hp_2{hp_2},
+          burned_1{burned_1}, burned_2{burned_2},
+          recharge_1{recharge_1}, recharge_2{recharge_2}
     {
     }
 
@@ -153,6 +155,8 @@ struct State
     {
         return (hp_1 == other.hp_1) &&
                (hp_2 == other.hp_2) &&
+               (burned_1 == other.burned_1) &&
+               (burned_2 == other.burned_2) &&
                (recharge_1 == other.recharge_1) &&
                (recharge_2 == other.recharge_2);
     }
@@ -272,11 +276,11 @@ mpq_class q_value(
         // also in turn order
         HP_T t1_hp = flipped ? state.hp_2 : state.hp_1;
         HP_T t2_hp = flipped ? state.hp_1 : state.hp_2;
-        const int t1_burned = flipped ? state.burned_2 : state.burned_1;
-        const int t2_burned = flipped ? state.burned_1 : state.burned_2;
+        const int t1_already_burned = flipped ? state.burned_2 : state.burned_1;
+        const int t2_already_burned = flipped ? state.burned_1 : state.burned_2;
 
-        const Move &m1 = *MOVES[flipped ? move_1_idx : move_2_idx];
-        const Move &m2 = *MOVES[flipped ? move_2_idx : move_1_idx];
+        const Move &m1 = *MOVES[flipped ? move_2_idx : move_1_idx];
+        const Move &m2 = *MOVES[flipped ? move_1_idx : move_2_idx];
 
         const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze;
         const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze;
@@ -290,7 +294,6 @@ mpq_class q_value(
             (hit_1 ? m1.acc : m1.one_minus_acc) * (crit_1 ? CRIT : NO_CRIT) * (proc_1 ? m1.eff : m1.one_minus_eff) *
             (hit_2 ? m2.acc : m2.one_minus_acc) * (crit_2 ? CRIT : NO_CRIT) * (proc_2 ? m2.eff : m2.one_minus_eff);
         t1_prob_no_roll.canonicalize();
-
 
         total_prob_no_rolls += t1_prob_no_roll;
         total_prob_no_rolls.canonicalize();
@@ -310,16 +313,15 @@ mpq_class q_value(
             continue;
         }
 
-        const std::vector<Roll> &rolls_t1 = hit_1 ? (crit_1 ? m1.crit_rolls : (t1_burned ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
-        const std::vector<Roll> &rolls_t2 = hit_2 ? (crit_2 ? m2.crit_rolls : ((t2_burned || brn_t1) ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
+        const std::vector<Roll> &rolls_t1 = hit_1 ? (crit_1 ? m1.crit_rolls : (t1_already_burned ? m1.burned_rolls : m1.rolls)) : RECHARGE.rolls;
+        const std::vector<Roll> &rolls_t2 = hit_2 ? (crit_2 ? m2.crit_rolls : ((t2_already_burned || brn_t1) ? m2.burned_rolls : m2.rolls)) : RECHARGE.rolls;
 
         for (const Roll roll_1 : rolls_t1)
         {
             mpq_class t1_roll_prob = t1_prob_no_roll * mpq_class{roll_1.n, 39};
             t1_roll_prob.canonicalize();
 
-            t2_hp = t2_hp - roll_1.dmg * (hit_1 ? HP_T{1} : HP_T{0});
-
+            t2_hp -= (hit_1 ? roll_1.dmg : 0);
             if (t2_hp <= 0)
             {
                 if (!flipped)
@@ -336,7 +338,7 @@ mpq_class q_value(
             }
 
             // brn damage
-            t1_hp = t1_hp - (t1_burned ? 1 : 0) * BURN_DMG;
+            t1_hp -= (t1_already_burned ? BURN_DMG : 0);
             if (t1_hp <= 0)
             {
                 if (!flipped)
@@ -375,8 +377,7 @@ mpq_class q_value(
                 total_prob += t2_roll_prob;
                 total_prob.canonicalize();
 
-                t1_hp = t1_hp - roll_2.dmg * (hit_2 ? 1 : 0);
-
+                t1_hp -= (hit_2 ? roll_2.dmg : 0);
                 if (t1_hp <= 0)
                 {
                     if (!flipped)
@@ -391,7 +392,7 @@ mpq_class q_value(
                 }
 
                 // brn damage
-                t2_hp = t2_hp - ((t2_burned || brn_t1) ? 1 : 0) * BURN_DMG;
+                t2_hp -= ((t2_already_burned || brn_t1) ? BURN_DMG : 0);
                 if (t2_hp <= 0)
                 {
                     if (!flipped)
@@ -414,20 +415,20 @@ mpq_class q_value(
                     child = State{
                         t1_hp,
                         t2_hp,
+                        t1_already_burned || brn_t2,
+                        t2_already_burned || brn_t1,
                         hit_1 && m1.must_recharge,
-                        hit_2 && m2.must_recharge,
-                        t1_burned || brn_t2,
-                        t2_burned || brn_t1};
+                        hit_2 && m2.must_recharge};
                 }
                 else
                 {
                     child = State{
                         t2_hp,
                         t1_hp,
+                        t2_already_burned || brn_t1,
+                        t1_already_burned || brn_t2,
                         hit_2 && m2.must_recharge,
-                        hit_1 && m1.must_recharge,
-                        t2_burned || brn_t1,
-                        t1_burned || brn_t2};
+                        hit_1 && m1.must_recharge};
                 }
 
                 if (child != state)
@@ -475,8 +476,8 @@ mpq_class q_value(
         }
         // only S00 should have this
     }
-    mpq_class x = value / (mpq_class{1} - reflexive_prob);
-    x.canonicalize();
+    mpq_class real_value = value / (mpq_class{1} - reflexive_prob);
+    real_value.canonicalize();
 
     // if (state.hp_1 == state.hp_2)
     // {
@@ -493,7 +494,7 @@ mpq_class q_value(
     //     }
     // }
 
-    return x;
+    return real_value;
 }
 void solve_state(
     Solution &tables,
@@ -522,8 +523,6 @@ void solve_state(
                 Types::Value{q_value(tables, state, p1_legal_moves[row_idx], p2_legal_moves[col_idx])};
         }
     }
-
-    // payoff_matrix.print();
 
     // solve
 
@@ -646,6 +645,7 @@ void move_rolls_assert()
     {
         int a = 0;
         int b = 0;
+        int c = 0;
         for (const auto roll : move->rolls)
         {
             a += roll.n;
@@ -654,10 +654,13 @@ void move_rolls_assert()
         {
             b += roll.n;
         }
-        assert(a == 39);
-        assert(b == 39);
-        if ((a != 39) || (b != 39))
+        for (const auto roll : move->burned_rolls)
         {
+            c += roll.n;
+        }
+        if ((a != 39) || (b != 39) || (c != 39))
+        {
+            assert(false);
             exit(1);
         }
     }
