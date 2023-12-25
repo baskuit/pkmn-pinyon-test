@@ -9,7 +9,9 @@
 
 std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
 
-const size_t MAX_HP = 353;
+std::ostringstream BUFFER;
+
+const int MAX_HP = 353;
 
 const int BURN_DMG = MAX_HP / 16;
 
@@ -154,7 +156,7 @@ const std::array<const Move *, 5> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &EARTHQUAKE,
+    &FIRE_BLAST,
     &RECHARGE};
 
 const std::array<const Move *, 5> P2_MOVES{
@@ -519,19 +521,20 @@ mpq_class q_value(
     mpq_class real_value = value / (mpq_class{1} - reflexive_prob);
     real_value.canonicalize();
 
-    if ((state.hp_1 == state.hp_2) && (state.burned_1 == state.burned_2))
-    {
-        if (P1_MOVES[move_1_idx] == P2_MOVES[move_2_idx])
-        {
-            if (real_value != mpq_class{1, 2})
-            {
-                std::cout << "mirror q fail" << std::endl;
-                std::cout << real_value.get_str() << std::endl;
-                assert(false);
-                exit(1);
-            }
-        }
-    }
+    // Drop this as well for unequal movesets
+    // if ((state.hp_1 == state.hp_2) && (state.burned_1 == state.burned_2))
+    // {
+    //     if (P1_MOVES[move_1_idx] == P2_MOVES[move_2_idx])
+    //     {
+    //         if (real_value != mpq_class{1, 2})
+    //         {
+    //             std::cout << "mirror q fail" << std::endl;
+    //             std::cout << real_value.get_str() << std::endl;
+    //             assert(false);
+    //             exit(1);
+    //         }
+    //     }
+    // }
 
     return real_value;
 }
@@ -591,6 +594,9 @@ void total_solve(
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
+
+            std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
+
             for (int b = 0; b < 4; ++b)
             {
                 const int burned_1 = (b & 1) >> 0;
@@ -608,51 +614,54 @@ void total_solve(
 
                 // assert
                 SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][burned_1][burned_2];
-                if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
-                {
-                    if ((entries[0].value != mpq_class{1, 2}))
-                    {
-                        std::cout << "s00 not 1/2 for same hp" << std::endl;
-                        assert(false);
-                        exit(1);
-                    }
-                    if (entries[1].value + entries[2].value != mpq_class{1})
-                    {
-                        std::cout << "s01 doesnt mirror s10" << std::endl;
-                        assert(false);
-                        exit(1);
-                    }
-                }
+
+                // Not relevent if the movesets are not the same
+
+                // if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
+                // {
+                //     if ((entries[0].value != mpq_class{1, 2}))
+                //     {
+                //         // std::cout << "s00 not 1/2 for same hp" << std::endl;
+                //         // assert(false);
+                //         // exit(1);
+                //     }
+                //     if (entries[1].value + entries[2].value != mpq_class{1})
+                //     {
+                //         std::cout << "s01 doesnt mirror s10" << std::endl;
+                //         assert(false);
+                //         exit(1);
+                //     }
+                // }
 
                 // progress report
 
-                for (int r = 0; r < 3; ++r)
-                {
-                    const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                    std::cout
-                        << "HP: " << state.hp_1 << ' ' << state.hp_2
-                        << " BURN: " << state.burned_1 << ' ' << state.burned_2
-                        << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                    std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                    if (r % 2 == 0)
-                    {
-                        std::cout << "P1: ";
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            std::cout << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
-                        }
-                        std::cout << std::endl;
-                    }
-                    if (r / 2 == 0)
-                    {
-                        std::cout << "P2: ";
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            std::cout << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
-                        }
-                        std::cout << std::endl;
-                    }
-                };
+                // for (int r = 0; r < 3; ++r)
+                // {
+                //     const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
+                //     std::cout
+                //         << "HP: " << state.hp_1 << ' ' << state.hp_2
+                //         << " BURN: " << state.burned_1 << ' ' << state.burned_2
+                //         << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
+                //     std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                //     if (r % 2 == 0)
+                //     {
+                //         std::cout << "P1: ";
+                //         for (int i = 0; i < 4; ++i)
+                //         {
+                //             std::cout << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                //         }
+                //         std::cout << std::endl;
+                //     }
+                //     if (r / 2 == 0)
+                //     {
+                //         std::cout << "P2: ";
+                //         for (int i = 0; i < 4; ++i)
+                //         {
+                //             std::cout << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                //         }
+                //         std::cout << std::endl;
+                //     }
+                // };
 
                 // file output
 
@@ -660,29 +669,29 @@ void total_solve(
                 {
                     const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
                     // print_state(state);
-                    OUTPUT_FILE
+                    BUFFER
                         << "HP: " << state.hp_1 << ' ' << state.hp_2
                         << " BURN: " << state.burned_1 << ' ' << state.burned_2
                         << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                    OUTPUT_FILE << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                    OUTPUT_FILE << "STRATEGIES:" << std::endl;
+                    BUFFER << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                    BUFFER << "STRATEGIES:" << std::endl;
                     if (r % 2 == 0)
                     {
-                        OUTPUT_FILE << "P1: ";
+                        BUFFER << "P1: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            OUTPUT_FILE << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                            BUFFER << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
                         }
-                        OUTPUT_FILE << std::endl;
+                        BUFFER << std::endl;
                     }
                     if (r / 2 == 0)
                     {
-                        OUTPUT_FILE << "P2: ";
+                        BUFFER << "P2: ";
                         for (int i = 0; i < 4; ++i)
                         {
-                            OUTPUT_FILE << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                            BUFFER << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
                         }
-                        OUTPUT_FILE << std::endl;
+                        BUFFER << std::endl;
                     }
                 }
 
@@ -731,6 +740,9 @@ int main()
               << std::endl;
 
     total_solve(tables);
+
+    OUTPUT_FILE << BUFFER.str();
+    OUTPUT_FILE.close();
 
     return 0;
 }
