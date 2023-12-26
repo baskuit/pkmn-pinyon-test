@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <fstream>
 
-std::ofstream OUTPUT_FILE{"out.txt", std::ios::out | std::ios::trunc};
+std::ofstream OUTPUT_FILE{"standard.txt", std::ios::out | std::ios::trunc};
 
 std::ostringstream BUFFER;
 
@@ -698,7 +698,7 @@ void total_solve(
     Solution &tables)
 {
 
-    for (int hp_1 = 1; hp_1 <= 30; ++hp_1)
+    for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
