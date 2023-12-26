@@ -7,7 +7,17 @@
 #include <stdint.h>
 #include <fstream>
 
-std::ofstream OUTPUT_FILE{"standard.txt", std::ios::out | std::ios::trunc};
+/*
+
+Checklist:
+
+* Output file name
+* Move pool
+* hp_1 upper bound for total solve
+
+*/
+
+std::ofstream OUTPUT_FILE{"stomp.txt", std::ios::out | std::ios::trunc};
 
 std::ostringstream BUFFER;
 
@@ -157,7 +167,7 @@ const std::vector<const Move *> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    // &FIRE_BLAST,
+    &STOMP,
     &RECHARGE};
 
 const std::vector<const Move *> P2_MOVES{
@@ -213,6 +223,7 @@ struct SolutionEntry
     mpq_class value;
     float p1_strategy[4];
     float p2_strategy[4];
+    float payoff_matrix[4][4];
 };
 
 struct Solution
@@ -662,7 +673,10 @@ void solve_state(
     const size_t rows = p1_legal_moves.size();
     const size_t cols = p2_legal_moves.size();
 
-    // fill payoff matrix
+    // get entry in Solution
+    SolutionEntry &entry = get_entry(tables, state);
+
+    // fill payoff matrix and add to entry
     Types::MatrixValue payoff_matrix{rows, cols};
 
     for (int row_idx = 0; row_idx < rows; ++row_idx)
@@ -671,6 +685,7 @@ void solve_state(
         {
             payoff_matrix.get(row_idx, col_idx) =
                 Types::Value{q_value<false>(tables, state, p1_legal_moves[row_idx], p2_legal_moves[col_idx])};
+            entry.payoff_matrix[row_idx][col_idx] = payoff_matrix.get(row_idx, col_idx).get_row_value().get().get_d();
         }
     }
 
@@ -680,7 +695,6 @@ void solve_state(
     Types::VectorReal col_strategy{cols};
 
     auto value = LRSNash::solve(payoff_matrix, row_strategy, col_strategy);
-    SolutionEntry &entry = get_entry(tables, state);
     entry.value = value.get_row_value().get();
 
     for (int row_idx = 0; row_idx < rows; ++row_idx)
@@ -705,105 +719,87 @@ void total_solve(
 
             std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
 
-            for (int b = 0; b < 1; ++b)
+            for (int burned_1 = 0; burned_1 < 1; ++burned_1)
             {
-                const int burned_1 = 0;
-                const int burned_2 = 0;
-
-                // Solve
-
-                const State state_00{hp_1, hp_2, burned_1, burned_2, false, false};
-                const State state_01{hp_1, hp_2, burned_1, burned_2, true, false};
-                const State state_10{hp_1, hp_2, burned_1, burned_2, false, true};
-
-                solve_state(tables, state_00);
-                solve_state(tables, state_01);
-                solve_state(tables, state_10);
-
-                // assert
-                SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][burned_1][burned_2];
-
-                // Not relevent if the movesets are not the same
-
-                // if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
-                // {
-                //     if ((entries[0].value != mpq_class{1, 2}))
-                //     {
-                //         // std::cout << "s00 not 1/2 for same hp" << std::endl;
-                //         // assert(false);
-                //         // exit(1);
-                //     }
-                //     if (entries[1].value + entries[2].value != mpq_class{1})
-                //     {
-                //         std::cout << "s01 doesnt mirror s10" << std::endl;
-                //         assert(false);
-                //         exit(1);
-                //     }
-                // }
-
-                // progress report
-
-                // for (int r = 0; r < 3; ++r)
-                // {
-                //     const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                //     std::cout
-                //         << "HP: " << state.hp_1 << ' ' << state.hp_2
-                //         << " BURN: " << state.burned_1 << ' ' << state.burned_2
-                //         << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                //     std::cout << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                //     if (r % 2 == 0)
-                //     {
-                //         std::cout << "P1: ";
-                //         for (int i = 0; i < 4; ++i)
-                //         {
-                //             std::cout << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
-                //         }
-                //         std::cout << std::endl;
-                //     }
-                //     if (r / 2 == 0)
-                //     {
-                //         std::cout << "P2: ";
-                //         for (int i = 0; i < 4; ++i)
-                //         {
-                //             std::cout << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
-                //         }
-                //         std::cout << std::endl;
-                //     }
-                // };
-
-                // file output
-
-                for (int r = 0; r < 3; ++r)
+                for (int burned_2 = 0; burned_2 < 1; ++burned_2)
                 {
-                    const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                    // print_state(state);
-                    BUFFER
-                        << "HP: " << state.hp_1 << ' ' << state.hp_2
-                        << " BURN: " << state.burned_1 << ' ' << state.burned_2
-                        << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                    BUFFER << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                    BUFFER << "STRATEGIES:" << std::endl;
-                    if (r % 2 == 0)
-                    {
-                        BUFFER << "P1: ";
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            BUFFER << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
-                        }
-                        BUFFER << std::endl;
-                    }
-                    if (r / 2 == 0)
-                    {
-                        BUFFER << "P2: ";
-                        for (int i = 0; i < 4; ++i)
-                        {
-                            BUFFER << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
-                        }
-                        BUFFER << std::endl;
-                    }
-                }
+                    // Solve
 
-                // end hp, burn loop
+                    const State state_00{hp_1, hp_2, burned_1, burned_2, false, false};
+                    const State state_01{hp_1, hp_2, burned_1, burned_2, true, false};
+                    const State state_10{hp_1, hp_2, burned_1, burned_2, false, true};
+
+                    solve_state(tables, state_00);
+                    solve_state(tables, state_01);
+                    solve_state(tables, state_10);
+
+                    SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][burned_1][burned_2];
+
+                    // assert
+
+                    // Not relevent if the movesets are not the same
+
+                    // if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
+                    // {
+                    //     if ((entries[0].value != mpq_class{1, 2}))
+                    //     {
+                    //         // std::cout << "s00 not 1/2 for same hp" << std::endl;
+                    //         // assert(false);
+                    //         // exit(1);
+                    //     }
+                    //     if (entries[1].value + entries[2].value != mpq_class{1})
+                    //     {
+                    //         std::cout << "s01 doesnt mirror s10" << std::endl;
+                    //         assert(false);
+                    //         exit(1);
+                    //     }
+                    // }
+
+                    // file output
+
+                    for (int r = 0; r < 3; ++r)
+                    {
+                        const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
+                        BUFFER
+                            << "HP: " << state.hp_1 << ' ' << state.hp_2
+                            << " BURN: " << state.burned_1 << ' ' << state.burned_2
+                            << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
+                        BUFFER << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                        BUFFER << "PAYOFF MATRIX:" << std::endl;
+
+                        // always adds the full 4x4, hopefully the initialized mpq_class values are just 0...
+                        for (int row_idx = 0; row_idx < 4; ++row_idx)
+                        {
+                            for (int col_idx = 0; col_idx < 4; ++col_idx)
+                            {
+                                BUFFER << entries[r].payoff_matrix[row_idx][col_idx] << ' ';
+                            }
+                            BUFFER << std::endl;
+                        }
+
+                        BUFFER << "STRATEGIES:" << std::endl;
+                        if (r % 2 == 0)
+                        {
+                            BUFFER << "P1: ";
+                            for (int i = 0; i < P1_MOVES.size() - 1; ++i)
+                            {
+                                BUFFER << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                            }
+                            BUFFER << std::endl;
+                        }
+                        if (r / 2 == 0)
+                        {
+                            BUFFER << "P2: ";
+                            for (int i = 0; i < P2_MOVES.size() - 1; ++i)
+                            {
+                                BUFFER << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                            }
+                            BUFFER << std::endl;
+                        }
+                    }
+
+                    // end hp, burn loop
+                }
             }
         }
     }
@@ -851,12 +847,6 @@ int main()
 
     OUTPUT_FILE << BUFFER.str();
     OUTPUT_FILE.close();
-
-    // q_value<true>(
-    //     tables,
-    //     State{353, 1, 0, 0, 0, 0},
-    //     0,
-    //     1);
 
     return 0;
 }
