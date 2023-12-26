@@ -515,8 +515,8 @@ mpq_class q_value(
                 if (!flipped)
                 {
                     child = State{
-                        t1_hp,
-                        t2_hp,
+                        t1_hp - (t2_dmg_dealt + t1_brn_taken),
+                        t2_hp - (t1_dmg_dealt + t2_brn_taken),
                         t1_already_burned || brn_t2,
                         t2_already_burned || brn_t1,
                         hit_1 && m1.must_recharge,
@@ -525,8 +525,8 @@ mpq_class q_value(
                 else
                 {
                     child = State{
-                        t2_hp,
-                        t1_hp,
+                        t2_hp - (t1_dmg_dealt + t2_brn_taken),
+                        t1_hp - (t2_dmg_dealt + t1_brn_taken),
                         t2_already_burned || brn_t1,
                         t1_already_burned || brn_t2,
                         hit_2 && m2.must_recharge,
