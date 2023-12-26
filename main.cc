@@ -68,36 +68,6 @@ void count_branches(
     counts.print();
 }
 
-void play_good_game_lol(
-    const BattleTypes::State &state_)
-{
-    using Types = TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>;
-    Types::PRNG device{0};
-    std::cout << "play_good_game device seed: " << device.get_seed() << std::endl;
-    Types::State state{state_};
-    state.print_log = true;
-    Types::Model model{0};
-    Types::Search search{};
-    int t = 0;
-    while (!state.is_terminal())
-    {
-        std::cout << "t: " << t << std::endl;
-        Types::MatrixNode root{};
-        search.run_for_iterations(10000, device, state, model, root);
-        Types::VectorReal r, c;
-        search.get_empirical_strategies(root.stats, r, c);
-
-        const int row_idx = device.sample_pdf(r);
-        const int col_idx = device.sample_pdf(c);
-        state.apply_actions(
-            state.row_actions[row_idx],
-            state.col_actions[col_idx]);
-        // after to not overwrite .row_actions, col_actions
-        state.get_actions();
-        ++t;
-    }
-}
-
 template <typename Types>
 void fill(
     typename Types::State &state,
@@ -163,7 +133,7 @@ void fill(
     }
 }
 
-void map_test(
+void mapped_state_test(
     BattleTypes::State &state)
 {
     using Types = TreeBanditThreaded<Exp3<MonteCarloModel<BattleTypes>>>;
@@ -173,10 +143,11 @@ void map_test(
     std::cout << "threads " << search.threads << std::endl;
 
     using AB = AlphaBeta<EmptyModel<MappedState<Types>>>;
+    // expands state up to depth 2 and call search.run_for_iterations for get_payoff
     AB::State ab_state{
-        2,
-        10000,
-        1 << 16,
+        2, //depth
+        10000, //tries
+        1 << 10, // playouts
         device,
         state,
         model,
@@ -188,6 +159,7 @@ void map_test(
     AB::Model ab_model{};
     AB::MatrixNode ab_root{};
 
+    // solves until terminal, which is up to the depth set above
     ab_solver.run(device, ab_state, ab_model, ab_root);
     std::cout << "SEARCHED: " << ab_root.count_matrix_nodes() << std::endl;
 
@@ -200,23 +172,24 @@ void map_test(
     std::cout << stats.row_solution.size() << ' ' << stats.col_solution.size() << std::endl;
     stats.data_matrix.print();
 
-    fill<AB>(
-        ab_state, 
-        &ab_root, 
-        "/home/user/Desktop/pkmn-pinyon-test/tree/");
+    // fill<AB>(
+    //     ab_state, 
+    //     &ab_root, 
+    //     "/home/user/Desktop/pkmn-pinyon-test/tree/");
 }
 
 int main(int argc, char **argv)
 {
 
     BattleTypes::State state{};
+    // get past trivial switch-in state
     state.apply_actions(
         state.row_actions[0], state.col_actions[0]);
     state.get_actions();
-    BattleTypes::Seed seed;
-    BattleTypes::PRNG device;
+    // BattleTypes::Seed seed;
+    // BattleTypes::PRNG device;
 
-    map_test(state);
+    mapped_state_test(state);
 
     // while (!state.is_terminal()) {
     //     const int rows = state.row_actions.size();
