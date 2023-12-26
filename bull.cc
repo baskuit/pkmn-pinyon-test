@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <fstream>
 
-std::ofstream OUTPUT_FILE{"fb.txt", std::ios::out | std::ios::trunc};
+std::ofstream OUTPUT_FILE{"standard.txt", std::ios::out | std::ios::trunc};
 
 std::ostringstream BUFFER;
 
@@ -157,7 +157,7 @@ const std::vector<const Move *> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &FIRE_BLAST,
+    // &FIRE_BLAST,
     &RECHARGE};
 
 const std::vector<const Move *> P2_MOVES{
@@ -705,10 +705,10 @@ void total_solve(
 
             std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
 
-            for (int b = 0; b < 2; ++b)
+            for (int b = 0; b < 1; ++b)
             {
                 const int burned_1 = 0;
-                const int burned_2 = b;
+                const int burned_2 = 0;
 
                 // Solve
 
