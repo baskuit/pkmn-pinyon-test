@@ -151,19 +151,20 @@ const std::vector<const Move *> ALL_MOVES{
     &STOMP,
     &RECHARGE};
 
-// TODO add p1/p2 movesets
-const std::array<const Move *, 5> P1_MOVES{
+// Currently recharge MUST be the last move
+// but otherwise you can do whatever, really
+const std::vector<const Move *> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &FIRE_BLAST,
+    // &FIRE_BLAST,
     &RECHARGE};
 
-const std::array<const Move *, 5> P2_MOVES{
+const std::vector<const Move *> P2_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &EARTHQUAKE,
+    // &EARTHQUAKE,
     &RECHARGE};
 
 struct State
@@ -219,22 +220,6 @@ struct Solution
     SolutionEntry data[MAX_HP][MAX_HP][2][2][3];
 };
 
-// Burn complicates things
-// void init_tables(
-//     Solution &tables)
-// {
-//     for (int hp_1 = 1; hp_1 <= BODY_SLAM.rolls[0].dmg; ++hp_1)
-//     {
-//         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
-//         {
-//             SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][0][0];
-//             entries[0].value = mpq_class{1, 2};
-//             entries[1].value = mpq_class{1, 512};
-//             entries[2].value = mpq_class{511, 512};
-//         }
-//     }
-// }
-
 SolutionEntry &get_entry(
     Solution &tables,
     const State &state)
@@ -287,17 +272,25 @@ mpq_class lookup_value(
     }
 }
 
+template <bool debug = false>
 mpq_class q_value(
     const Solution &tables,
     const State &state,
     const int move_1_idx,
-    const int move_2_idx,
-    const bool debug = false)
+    const int move_2_idx)
 {
     mpq_class value{0};
     mpq_class reflexive_prob{0};
     mpq_class total_prob{0};
     mpq_class total_prob_no_rolls{0};
+
+    mpq_class p2_frz_loss{0};
+    mpq_class p2_ko_loss{0};
+    mpq_class p1_brn_loss{0};
+    mpq_class p1_frz_loss{0};
+    mpq_class p1_ko_loss{0};
+    mpq_class p2_brn_loss{0};
+    mpq_class non_terminal{0};
 
     for (int i = 0; i < 128; ++i)
     {
@@ -312,8 +305,8 @@ mpq_class q_value(
         const bool flipped = i & 64;
 
         // also in turn order
-        int t1_hp = flipped ? state.hp_2 : state.hp_1;
-        int t2_hp = flipped ? state.hp_1 : state.hp_2;
+        const int t1_hp = flipped ? state.hp_2 : state.hp_1;
+        const int t2_hp = flipped ? state.hp_1 : state.hp_2;
         const int t1_already_burned = flipped ? state.burned_2 : state.burned_1;
         const int t2_already_burned = flipped ? state.burned_1 : state.burned_2;
 
@@ -342,9 +335,20 @@ mpq_class q_value(
             {
                 value += t1_prob_no_roll;
                 value.canonicalize();
+
+                if constexpr (debug)
+                {
+                    p2_frz_loss += t1_prob_no_roll;
+                    p2_frz_loss.canonicalize();
+                }
             }
             else
             {
+                if constexpr (debug)
+                {
+                    p1_frz_loss += t1_prob_no_roll;
+                    p1_frz_loss.canonicalize();
+                }
             }
             total_prob += t1_prob_no_roll;
             total_prob.canonicalize();
@@ -359,16 +363,28 @@ mpq_class q_value(
             mpq_class t1_roll_prob = t1_prob_no_roll * mpq_class{roll_1.n, 39};
             t1_roll_prob.canonicalize();
 
-            t2_hp -= (hit_1 ? roll_1.dmg : 0);
-            if (t2_hp <= 0)
+            const int t1_dmg_dealt = (hit_1 ? roll_1.dmg : 0);
+            if (t2_hp <= t1_dmg_dealt)
             {
+
                 if (!flipped)
                 {
                     value += t1_roll_prob;
                     value.canonicalize();
+
+                    if constexpr (debug)
+                    {
+                        p2_ko_loss += t1_roll_prob;
+                        p2_ko_loss.canonicalize();
+                    }
                 }
                 else
                 {
+                    if constexpr (debug)
+                    {
+                        p1_ko_loss += t1_roll_prob;
+                        p1_ko_loss.canonicalize();
+                    }
                 }
                 total_prob += t1_roll_prob;
                 total_prob.canonicalize();
@@ -376,16 +392,29 @@ mpq_class q_value(
             }
 
             // brn damage
-            t1_hp -= (t1_already_burned ? BURN_DMG : 0);
-            if (t1_hp <= 0)
+            const int t1_brn_taken = (t1_already_burned ? BURN_DMG : 0);
+
+            if (t1_hp <= t1_brn_taken)
             {
+
                 if (!flipped)
                 {
+                    if constexpr (debug)
+                    {
+                        p1_brn_loss += t1_roll_prob;
+                        p1_brn_loss.canonicalize();
+                    }
                 }
                 else
                 {
                     value += t1_roll_prob;
                     value.canonicalize();
+
+                    if constexpr (debug)
+                    {
+                        p2_brn_loss += t1_roll_prob;
+                        p2_brn_loss.canonicalize();
+                    }
                 }
                 total_prob += t1_roll_prob;
                 total_prob.canonicalize();
@@ -396,11 +425,22 @@ mpq_class q_value(
             {
                 if (!flipped)
                 {
+                    if constexpr (debug)
+                    {
+                        p1_frz_loss += t1_roll_prob;
+                        p1_frz_loss.canonicalize();
+                    }
                 }
                 else
                 {
                     value += t1_roll_prob;
                     value.canonicalize();
+
+                    if constexpr (debug)
+                    {
+                        p2_frz_loss += t1_roll_prob;
+                        p2_frz_loss.canonicalize();
+                    }
                 }
                 total_prob += t1_roll_prob;
                 total_prob.canonicalize();
@@ -415,31 +455,55 @@ mpq_class q_value(
                 total_prob += t2_roll_prob;
                 total_prob.canonicalize();
 
-                t1_hp -= (hit_2 ? roll_2.dmg : 0);
-                if (t1_hp <= 0)
+                const int t2_dmg_dealt = (hit_2 ? roll_2.dmg : 0);
+                if (t1_hp <= (t1_brn_taken + t2_dmg_dealt))
                 {
+
                     if (!flipped)
                     {
+                        if constexpr (debug)
+                        {
+                            p1_ko_loss += t2_roll_prob;
+                            p1_ko_loss.canonicalize();
+                        }
                     }
                     else
                     {
                         value += t2_roll_prob;
                         value.canonicalize();
+
+                        if constexpr (debug)
+                        {
+                            p2_ko_loss += t2_roll_prob;
+                            p2_ko_loss.canonicalize();
+                        }
                     }
                     continue;
                 }
 
                 // brn damage
-                t2_hp -= ((t2_already_burned || brn_t1) ? BURN_DMG : 0);
-                if (t2_hp <= 0)
+                const int t2_brn_taken = ((t2_already_burned || brn_t1) ? BURN_DMG : 0);
+                if (t2_hp <= (t2_brn_taken + t1_dmg_dealt))
                 {
+
                     if (!flipped)
                     {
                         value += t2_roll_prob;
                         value.canonicalize();
+
+                        if constexpr (debug)
+                        {
+                            p2_brn_loss += t2_roll_prob;
+                            p2_brn_loss.canonicalize();
+                        }
                     }
                     else
                     {
+                        if constexpr (debug)
+                        {
+                            p1_brn_loss += t2_roll_prob;
+                            p1_brn_loss.canonicalize();
+                        }
                     }
                     value.canonicalize();
                     continue;
@@ -469,25 +533,34 @@ mpq_class q_value(
                         hit_1 && m1.must_recharge};
                 }
 
+                if constexpr (debug)
+                {
+                    non_terminal += t2_roll_prob;
+                    non_terminal.canonicalize();
+                }
+
                 if (child != state)
                 {
-                    mpq_class lv = lookup_value(tables, child);
-                    // faily good at catching bad lookups
-                    // I think in uninitialized mpq_class has 0 value by default
-                    // but sometimes, e.g. (1 1 1 0 1 0)
-                    // the value IS 0
-                    // if (lv == mpq_class{0})
-                    // {
-                    //     std::cout << '!' << std::endl;
-                    //     print_state(state);
-                    //     print_state(child);
-                    //     // std::cout << move_1.id << ' ' << move_2.id << std::endl;
-                    //     assert(false);
-                    //     exit(1);
-                    // }
-                    const mpq_class weighted_solved_value = t2_roll_prob * lv;
-                    value += weighted_solved_value;
-                    value.canonicalize();
+                    if constexpr (!debug)
+                    {
+                        mpq_class lv = lookup_value(tables, child);
+                        // faily good at catching bad lookups
+                        // I think in uninitialized mpq_class has 0 value by default
+                        // but sometimes, e.g. (1 1 1 0 1 0)
+                        // the value IS 0
+                        // if (lv == mpq_class{0})
+                        // {
+                        //     std::cout << '!' << std::endl;
+                        //     print_state(state);
+                        //     print_state(child);
+                        //     // std::cout << move_1.id << ' ' << move_2.id << std::endl;
+                        //     assert(false);
+                        //     exit(1);
+                        // }
+                        const mpq_class weighted_solved_value = t2_roll_prob * lv;
+                        value += weighted_solved_value;
+                        value.canonicalize();
+                    }
                 }
                 else
                 {
@@ -536,6 +609,29 @@ mpq_class q_value(
     //     }
     // }
 
+    if constexpr (debug)
+    {
+        std::cout << "p2 FRZ LOSS: " << p2_frz_loss.get_d() << std::endl;
+        std::cout << "p2 KO LOSS: " << p2_ko_loss.get_d() << std::endl;
+        std::cout << "p1 BRN LOSS: " << p1_brn_loss.get_d() << std::endl;
+        std::cout << "p1 FRZ LOSS: " << p1_frz_loss.get_d() << std::endl;
+        std::cout << "p1 KO LOSS: " << p1_ko_loss.get_d() << std::endl;
+        std::cout << "p2 BRN LOSS: " << p2_brn_loss.get_d() << std::endl;
+        std::cout << "non terminal " << non_terminal.get_d() << std::endl;
+        std::cout << std::endl;
+        std::cout << "p2 FRZ LOSS: " << p2_frz_loss.get_str() << std::endl;
+        std::cout << "p2 KO LOSS: " << p2_ko_loss.get_str() << std::endl;
+        std::cout << "p1 BRN LOSS: " << p1_brn_loss.get_str() << std::endl;
+        std::cout << "p1 FRZ LOSS: " << p1_frz_loss.get_str() << std::endl;
+        std::cout << "p1 KO LOSS: " << p1_ko_loss.get_str() << std::endl;
+        std::cout << "p2 BRN LOSS: " << p2_brn_loss.get_str() << std::endl;
+        std::cout << "non terminal " << non_terminal.get_str() << std::endl;
+
+        mpq_class total_prob_2 = p2_frz_loss + p2_ko_loss + p1_brn_loss + p1_frz_loss + p1_ko_loss + p2_brn_loss + non_terminal;
+        total_prob_2.canonicalize();
+        std::cout << "TOTAL " << total_prob_2.get_str() << std::endl;
+    }
+
     return real_value;
 }
 void solve_state(
@@ -545,12 +641,24 @@ void solve_state(
     // pinyon ftw!!!
     using Types = DefaultTypes<mpq_class, int, int, mpq_class, ConstantSum<1, 1>::Value>;
 
-    const std::vector<int> legal0 = {0, 1, 2, 3};
-    const std::vector<int> legal1 = {4};
+    // This is why RECHARGE must always be the last move in the moveset
+    std::vector<int> p1_legal_no_recharge = {};
+    for (int i = 0; i < P1_MOVES.size() - 1; ++i)
+    {
+        p1_legal_no_recharge.push_back(i);
+    }
+    std::vector<int> p1_legal_recharge = {int{P1_MOVES.size()} - 1};
+
+    std::vector<int> p2_legal_no_recharge = {};
+    for (int i = 0; i < P2_MOVES.size() - 1; ++i)
+    {
+        p2_legal_no_recharge.push_back(i);
+    }
+    std::vector<int> p2_legal_recharge = {int{P2_MOVES.size()} - 1};
 
     // get legal moves
-    std::vector<int> p1_legal_moves = (state.recharge_1 > 0) ? legal1 : legal0;
-    std::vector<int> p2_legal_moves = (state.recharge_2 > 0) ? legal1 : legal0;
+    std::vector<int> p1_legal_moves = (state.recharge_1 > 0) ? p1_legal_recharge : p1_legal_no_recharge;
+    std::vector<int> p2_legal_moves = (state.recharge_2 > 0) ? p2_legal_recharge : p2_legal_no_recharge;
     const size_t rows = p1_legal_moves.size();
     const size_t cols = p2_legal_moves.size();
 
@@ -562,7 +670,7 @@ void solve_state(
         for (int col_idx = 0; col_idx < cols; ++col_idx)
         {
             payoff_matrix.get(row_idx, col_idx) =
-                Types::Value{q_value(tables, state, p1_legal_moves[row_idx], p2_legal_moves[col_idx])};
+                Types::Value{q_value<false>(tables, state, p1_legal_moves[row_idx], p2_legal_moves[col_idx])};
         }
     }
 
@@ -590,14 +698,14 @@ void total_solve(
     Solution &tables)
 {
 
-    for (int hp_1 = 1; hp_1 <= MAX_HP; ++hp_1)
+    for (int hp_1 = 1; hp_1 <= 30; ++hp_1)
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
 
             std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
 
-            for (int b = 0; b < 4; ++b)
+            for (int b = 0; b < 1; ++b)
             {
                 const int burned_1 = (b & 1) >> 0;
                 const int burned_2 = (b & 2) >> 1;
@@ -743,6 +851,12 @@ int main()
 
     OUTPUT_FILE << BUFFER.str();
     OUTPUT_FILE.close();
+
+    // q_value<true>(
+    //     tables,
+    //     State{353, 1, 0, 0, 0, 0},
+    //     0,
+    //     1);
 
     return 0;
 }
