@@ -146,9 +146,41 @@ struct BattleTypes : TypeList
                 calc_options.overrides.bytes[0] = 217 + 2 * (battle.bytes[383] % 20);
                 calc_options.overrides.bytes[8] = 217 + 2 * (battle.bytes[382] % 20);
             }
-            pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
 
+            pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
             result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
+
+            auto *p = pkmn_gen1_battle_options_chance_probability(&options);
+            this->prob = typename TypeList::Prob{static_cast<float>(
+                pkmn_rational_numerator(p) / pkmn_rational_denominator(p))};
+
+            if (clamp)
+            {
+                std::cout << "clamp hit check: " << std::endl;
+
+                auto ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
+                const Obs &obs_ref = *reinterpret_cast<std::array<uint8_t, 16> *>(ptr);
+
+                for (int i = 0; i < 16; ++i)
+                {
+                    std::cout << (int)obs_ref.get()[i] << ' ';
+                }
+                std::cout << std::endl;
+
+                if ((obs_ref.get()[1] & 2) != uint8_t{0})
+                {
+                    std::cout << "roll 1 detected" << std::endl;
+                    this->prob *= static_cast<typename TypeList::Prob>(
+                        typename TypeList::Q{39, 20});
+                }
+                if ((obs_ref.get()[9] & 2) != uint8_t{0})
+                {
+                    std::cout << "roll 2 detected" << std::endl;
+                    this->prob *= static_cast<typename TypeList::Prob>(
+                        typename TypeList::Q{39, 20});
+                }
+            }
+
             result_kind = pkmn_result_type(result);
             if (result_kind) [[unlikely]]
             {
@@ -176,16 +208,6 @@ struct BattleTypes : TypeList
                 }
                 }
             }
-            else [[likely]]
-            {
-                auto p = pkmn_gen1_battle_options_chance_probability(&options);
-                this->prob = typename TypeList::Prob{static_cast<float>(
-                    pkmn_rational_numerator(p) / pkmn_rational_denominator(p))};
-                memcpy(
-                    this->obs.get().data(),
-                    pkmn_gen1_battle_options_chance_actions(&options)->bytes,
-                    16);
-            }
 
             for (int i = 0; i < 64; ++i)
             {
@@ -202,7 +224,9 @@ struct BattleTypes : TypeList
 
         const Obs &get_obs() const
         {
-            return this->obs;
+            auto ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
+            const Obs &obs_ref = *reinterpret_cast<std::array<uint8_t, 16> *>(ptr);
+            return obs_ref;
         }
 
         void randomize_transition(TypeList::PRNG &device)
@@ -211,13 +235,14 @@ struct BattleTypes : TypeList
             *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = device.uniform_64();
         }
 
-        void randomize_transition(TypeList::Seed seed)
+        // used in MappedState ? confirm TODO
+        void randomize_transition(const TypeList::Seed seed)
         {
             uint8_t *battle_prng_bytes = battle.bytes + n_bytes_battle;
             *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = seed;
         }
 
-        void save(std::filesystem::path path)
+        void save_debug_log(const std::filesystem::path path) const
         {
             std::fstream file;
             file.open(path, std::ios::binary | std::ios::app);
