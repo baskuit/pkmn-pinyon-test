@@ -136,22 +136,33 @@ void fill(
 void mapped_state_test(
     BattleTypes::State &state)
 {
+    // performing efficient alpha beta on each lvl 1 matrix node
+    
     using Types = TreeBanditThreaded<Exp3<MonteCarloModel<BattleTypes>>>;
-    Types::PRNG device{0};
-    Types::Model model{0};
-    Types::Search search{{.1}, 4};
-    std::cout << "threads " << search.threads << std::endl;
+    using T = SearchModel<Types, false>;
 
-    using AB = AlphaBeta<EmptyModel<MappedState<Types>>>;
+    const size_t iterations = 1 << 20;
+    Types::PRNG device{0};
+    T::Model model{iterations, device, {0}, {{.1}, 4}};
+
+    using AB = AlphaBeta<EmptyModel<MappedState<T>>>;
     // expands state up to depth 2 and call search.run_for_iterations for get_payoff
     AB::State ab_state{
         2, //depth
-        10000, //tries
-        1 << 10, // playouts
+        1 << 23, //tries
         device,
         state,
-        model,
-        search};
+        model};
+
+    // const size_t n = ab_state.explored_tree->child->stats.count;
+    // for (const auto branch : ab_state.explored_tree->child->stats.branches) {
+    //     const float p = (float)branch.second.count / n;
+    //     const float ratio = p / static_cast<float>(branch.second.prob);
+    //     const int x = std::log(ratio) / std::log(19.5) + .01;
+    //     std::cout << (float)branch.second.count / n * 1000 << " ~ " <<  branch.second.prob * 1000 * std::pow(19.5, x) << "; ";
+    // }
+
+    // return;
 
     std::cout << "TOTAL: " << ab_state.node->count_matrix_nodes() << std::endl;
 
@@ -160,7 +171,7 @@ void mapped_state_test(
     AB::MatrixNode ab_root{};
 
     // solves until terminal, which is up to the depth set above
-    ab_solver.run(device, ab_state, ab_model, ab_root);
+    ab_solver.run(2, device, ab_state, ab_model, ab_root);
     std::cout << "SEARCHED: " << ab_root.count_matrix_nodes() << std::endl;
 
     AB::MatrixStats &stats = ab_root.stats;

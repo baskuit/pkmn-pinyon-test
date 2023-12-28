@@ -295,13 +295,24 @@ mpq_class q_value(
     mpq_class total_prob{0};
     mpq_class total_prob_no_rolls{0};
 
-    mpq_class p2_frz_loss{0};
-    mpq_class p2_ko_loss{0};
-    mpq_class p1_brn_loss{0};
-    mpq_class p1_frz_loss{0};
-    mpq_class p1_ko_loss{0};
-    mpq_class p2_brn_loss{0};
-    mpq_class non_terminal{0};
+    static mpq_class p2_frz_loss;
+    static mpq_class p2_ko_loss;
+    static mpq_class p1_brn_loss;
+    static mpq_class p1_frz_loss;
+    static mpq_class p1_ko_loss;
+    static mpq_class p2_brn_loss;
+    static mpq_class non_terminal;
+
+    if constexpr (debug)
+    {
+        mpq_class p2_frz_loss = 0;
+        mpq_class p2_ko_loss = 0;
+        mpq_class p1_brn_loss = 0;
+        mpq_class p1_frz_loss = 0;
+        mpq_class p1_ko_loss = 0;
+        mpq_class p2_brn_loss = 0;
+        mpq_class non_terminal = 0;
+    }
 
     for (int i = 0; i < 128; ++i)
     {

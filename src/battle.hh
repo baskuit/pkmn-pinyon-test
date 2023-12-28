@@ -119,7 +119,7 @@ struct BattleTypes : TypeList
 
         void get_actions(
             TypeList::VectorAction &row_actions,
-            TypeList::VectorAction &col_actions)
+            TypeList::VectorAction &col_actions) const
         {
             row_actions.resize(
                 pkmn_gen1_battle_choices(
