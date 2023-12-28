@@ -124,28 +124,39 @@ int main(int argc, char **argv)
 {
 
     BattleTypes::State state{1, 1};
+    // use full rolls instead of default
+    state.clamp = false;
     // get past trivial switch-in state
     state.apply_actions(
         state.row_actions[0], state.col_actions[0]);
     state.get_actions();
 
-    // mapped_state_test(state);
-
-    using U = SearchModel<
+    using Exp3Model = SearchModel<
         TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>>;
 
-    U::PRNG device{0};
+    Exp3Model::PRNG device{0};
 
-    U::Model search_model{
-        1 << 10, device, {0}, {}};
+    Exp3Model::Model exp3_model{
+        1 << 12, device, {0}, {}};
 
-    using T = MappedAlphaBetaModel<U>;
+    using AlphaBetaModel = MappedAlphaBetaModel<Exp3Model>;
 
-    T::Model mapped_alpha_beta_model{
-        1, 1 << 16, device, search_model};
+    AlphaBetaModel::Model mapped_alpha_beta_model{
+        1, 1 << 20, device, exp3_model};
 
-    T::ModelOuput output;
-    mapped_alpha_beta_model.inference(std::move(state), output);
+    using Types = FullTraversal<EmptyModel<MappedState<AlphaBetaModel>>>;
 
-    std::cout << "MAPPED ALPHA BETA MODEL OUTPUT: " << output.value.get_row_value() << std::endl;
+    Types::State root_state{1, 1 << 20, device, state, mapped_alpha_beta_model};
+    Types::Model model{};
+    Types::Search search{};
+    Types::MatrixNode node{};
+    search.run(1, device, root_state, model, node);
+
+    std::cout << "VALUE:" << std::endl;
+    std::cout << node.stats.payoff.get_row_value() << std::endl;
+    std::cout << "STRATEGIES:" << std::endl;
+    math::print(node.stats.row_solution);
+    math::print(node.stats.col_solution);
+    std::cout << "PAYOFF MATRIX:" << std::endl;
+    node.stats.nash_payoff_matrix.print();
 }

@@ -19,12 +19,11 @@ Thus the template parameter is just ModelTypes
 #include <pinyon.hh>
 
 template <CONCEPT(IsModelTypes, Types)>
-struct MappedAlphaBetaModel
+struct MappedAlphaBetaModel : Types
 {
-    struct ModelOuput
-    {
-        typename Types::Value value;
-    };
+
+    // recreating type list
+    using State = typename Types::State;
 
     class Model
     {
@@ -45,15 +44,17 @@ struct MappedAlphaBetaModel
 
         void inference(
             const Types::State &&state,
-            ModelOuput &output)
+            Types::ModelOutput &output)
         {
+            typename Types::State state_clamped{state};
+            state_clamped.clamp = true;
             // Types has
             using AB = AlphaBeta<EmptyModel<MappedState<Types>>>;
             typename AB::State mapped_state{
                 depth,
                 tries,
                 device,
-                state,
+                state_clamped,
                 model};
             typename AB::Model ab_model{};
             typename AB::Search search{};
@@ -63,6 +64,7 @@ struct MappedAlphaBetaModel
                 // TODO lamo
             typename Types::Real mean {pair.first + pair.second}; //* 
                 // typename Types::Real{typename Types::Q{1, 2}};
+            mean *= typename Types::Real{typename Types::Q{1, 2}};
             output.value = mean;
         }
     };
