@@ -1,6 +1,7 @@
 #include "./src/battle.hh"
+#include "./src/mapped-state-alpha-beta.hh"
 
-void save(
+void save_debug_bytes(
     const BattleTypes::State &state)
 {
     std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
@@ -68,76 +69,11 @@ void count_branches(
     counts.print();
 }
 
-template <typename Types>
-void fill(
-    typename Types::State &state,
-    const typename Types::MatrixNode *matrix_node,
-    std::filesystem::path path)
-{
-    if (matrix_node == nullptr) {
-        return;
-    }
-
-    if (matrix_node->is_terminal())
-    {
-        state.save(path / "out.txt");
-        std::string score_string = std::to_string(matrix_node->stats.solved_value.get_row_value().get());
-        std::fstream file;
-        file.open(path/score_string, std::ios::binary | std::ios::app);
-        file.close();
-        return;
-    }
-
-    state.get_actions();
-
-    for (int row_idx = 0; row_idx < state.row_actions.size(); ++row_idx)
-    {
-        for (int col_idx = 0; col_idx < state.col_actions.size(); ++col_idx)
-        {
-            const typename Types::ChanceNode *chance_node = matrix_node->access(row_idx, col_idx);
-            if (chance_node == nullptr) {
-                continue;
-            }
-
-            std::vector<typename Types::Obs> chance_actions{};
-            state.get_chance_actions(
-                state.row_actions[row_idx],
-                state.col_actions[col_idx],
-                chance_actions
-            );
-
-            const auto &data = matrix_node->stats.data_matrix.get(row_idx, col_idx);
-
-            auto joint_action_path = path;
-            joint_action_path /=
-                std::format("{}, {} - {}, {}", 
-                    std::to_string(row_idx), std::to_string(col_idx),
-                    std::to_string(data.alpha_explored.get()), std::to_string((float)data.unexplored.get()));
-            std::filesystem::create_directory(joint_action_path);
-            
-
-            for (auto chance_action : chance_actions) {
-                typename Types::State state_copy = state;
-                state_copy.apply_actions(state.row_actions[row_idx], state.col_actions[col_idx], chance_action);
-                auto chance_path = joint_action_path;
-                chance_path /= std::format(
-                    "{}, {}",
-                    (int)(state_copy.prob.get() * 1000),
-                    arrayToString(state_copy.get_obs().get()));
-                std::filesystem::create_directory(chance_path);
-                const typename Types::MatrixNode *matrix_node_next = chance_node->access(state_copy.obs);
-                fill<Types>(
-                    state_copy, matrix_node_next, chance_path);
-            }
-        }
-    }
-}
-
 void mapped_state_test(
     BattleTypes::State &state)
 {
     // performing efficient alpha beta on each lvl 1 matrix node
-    
+
     using Types = TreeBanditThreaded<Exp3<MonteCarloModel<BattleTypes>>>;
     using T = SearchModel<Types, false>;
 
@@ -148,8 +84,8 @@ void mapped_state_test(
     using AB = AlphaBeta<EmptyModel<MappedState<T>>>;
     // expands state up to depth 2 and call search.run_for_iterations for get_payoff
     AB::State ab_state{
-        2, //depth
-        1 << 23, //tries
+        2,       // depth
+        1 << 23, // tries
         device,
         state,
         model};
@@ -182,35 +118,34 @@ void mapped_state_test(
     math::print(stats.col_solution);
     std::cout << stats.row_solution.size() << ' ' << stats.col_solution.size() << std::endl;
     stats.data_matrix.print();
-
-    // fill<AB>(
-    //     ab_state, 
-    //     &ab_root, 
-    //     "/home/user/Desktop/pkmn-pinyon-test/tree/");
 }
 
 int main(int argc, char **argv)
 {
 
-    BattleTypes::State state{};
+    BattleTypes::State state{1, 1};
     // get past trivial switch-in state
     state.apply_actions(
         state.row_actions[0], state.col_actions[0]);
     state.get_actions();
-    // BattleTypes::Seed seed;
-    // BattleTypes::PRNG device;
 
-    mapped_state_test(state);
+    // mapped_state_test(state);
 
-    // while (!state.is_terminal()) {
-    //     const int rows = state.row_actions.size();
-    //     const int cols = state.col_actions.size();
-    //     state.apply_actions(
-    //         state.row_actions[device.random_int(rows)],
-    //         state.col_actions[device.random_int(cols)]
-    //     );
-    //     state.get_actions();
-    // }
+    using U = SearchModel<
+        TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>>;
 
-    // save(state);
+    U::PRNG device{0};
+
+    U::Model search_model{
+        1 << 10, device, {0}, {}};
+
+    using T = MappedAlphaBetaModel<U>;
+
+    T::Model mapped_alpha_beta_model{
+        1, 1 << 16, device, search_model};
+
+    T::ModelOuput output;
+    mapped_alpha_beta_model.inference(std::move(state), output);
+
+    std::cout << "MAPPED ALPHA BETA MODEL OUTPUT: " << output.value.get_row_value() << std::endl;
 }

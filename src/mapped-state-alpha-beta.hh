@@ -55,12 +55,15 @@ struct MappedAlphaBetaModel
                 device,
                 state,
                 model};
-            AB::Model ab_model{};
-            AB::Search search{};
-            AB::MatrixNode node{};
-            search.run(-1, device, state, model, node);
-            // TODO get name right
-            output.value = root.stats.payoff_value;
+            typename AB::Model ab_model{};
+            typename AB::Search search{};
+            typename AB::MatrixNode node{};
+            std::pair<typename Types::Real, typename Types::Real>
+                pair = search.run(-1, device, mapped_state, ab_model, node);
+                // TODO lamo
+            typename Types::Real mean {pair.first + pair.second}; //* 
+                // typename Types::Real{typename Types::Q{1, 2}};
+            output.value = mean;
         }
     };
 };
