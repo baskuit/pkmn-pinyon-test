@@ -150,7 +150,7 @@ int main(int argc, char **argv)
     Types::Model model{};
     Types::Search search{};
     Types::MatrixNode node{};
-    search.run(1, device, root_state, model, node);
+    search.run(1, device, root_state, model, node, 6);
 
     std::cout << "VALUE:" << std::endl;
     std::cout << node.stats.payoff.get_row_value() << std::endl;
