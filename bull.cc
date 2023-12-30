@@ -17,7 +17,7 @@ Checklist:
 
 */
 
-std::ofstream OUTPUT_FILE{"stomp.txt", std::ios::out | std::ios::trunc};
+std::ofstream OUTPUT_FILE{"standard.txt", std::ios::out | std::ios::trunc};
 
 std::ostringstream BUFFER;
 
@@ -167,7 +167,7 @@ const std::vector<const Move *> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    &STOMP,
+    // &STOMP,
     &RECHARGE};
 
 const std::vector<const Move *> P2_MOVES{
@@ -181,6 +181,8 @@ struct State
 {
     int hp_1;
     int hp_2;
+    int freeze_clause_1;
+    int freeze_clause_2;
     int burned_1;
     int burned_2;
     int recharge_1;
@@ -191,11 +193,14 @@ struct State
     State(
         const int hp_1,
         const int hp_2,
+        const int freeze_clause_1,
+        const int freeze_clause_2,
         const int burned_1,
         const int burned_2,
         const int recharge_1,
         const int recharge_2)
         : hp_1{hp_1}, hp_2{hp_2},
+          freeze_clause_1{freeze_clause_1}, freeze_clause_2{freeze_clause_2},
           burned_1{burned_1}, burned_2{burned_2},
           recharge_1{recharge_1}, recharge_2{recharge_2}
     {
@@ -227,8 +232,8 @@ struct SolutionEntry
 };
 
 struct Solution
-{
-    SolutionEntry data[MAX_HP][MAX_HP][2][2][3];
+{ // hp, freeze, burn, recharge
+    SolutionEntry data[MAX_HP][MAX_HP][2][2][2][2][3];
 };
 
 SolutionEntry &get_entry(
@@ -239,12 +244,12 @@ SolutionEntry &get_entry(
     if (state.hp_1 < state.hp_2)
     {
         x = (state.recharge_1 << 1) + (state.recharge_2 << 0);
-        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.burned_2][state.burned_1][x % 3];
+        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.freeze_clause_2][state.freeze_clause_1][state.burned_2][state.burned_1][x % 3];
     }
     else
     {
         int x = (state.recharge_1 << 0) + (state.recharge_2 << 1);
-        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.burned_1][state.burned_2][x % 3];
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.freeze_clause_1][state.freeze_clause_2][state.burned_1][state.burned_2][x % 3];
     }
 }
 
@@ -256,12 +261,12 @@ const SolutionEntry &get_entry(
     if (state.hp_1 < state.hp_2)
     {
         x = (state.recharge_1 << 1) + (state.recharge_2 << 0);
-        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.burned_2][state.burned_1][x % 3];
+        return tables.data[state.hp_2 - 1][state.hp_1 - 1][state.freeze_clause_2][state.freeze_clause_1][state.burned_2][state.burned_1][x % 3];
     }
     else
     {
         int x = (state.recharge_1 << 0) + (state.recharge_2 << 1);
-        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.burned_1][state.burned_2][x % 3];
+        return tables.data[state.hp_1 - 1][state.hp_2 - 1][state.freeze_clause_1][state.freeze_clause_2][state.burned_1][state.burned_2][x % 3];
     }
 }
 
@@ -331,13 +336,15 @@ mpq_class q_value(
         const int t2_hp = flipped ? state.hp_1 : state.hp_2;
         const int t1_already_burned = flipped ? state.burned_2 : state.burned_1;
         const int t2_already_burned = flipped ? state.burned_1 : state.burned_2;
+        const int t1_freeze_clause = flipped ? state.freeze_clause_2 : state.freeze_clause_1;
+        const int t2_freeze_clause = flipped ? state.freeze_clause_1 : state.freeze_clause_2;
 
         const Move &m1 = flipped ? *P2_MOVES[move_2_idx] : *P1_MOVES[move_1_idx];
         const Move &m2 = flipped ? *P1_MOVES[move_1_idx] : *P2_MOVES[move_2_idx];
 
         const bool flinch_t1 = hit_1 && proc_1 && m1.may_flinch;
-        const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze;
-        const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze && !flinch_t1;
+        const bool frz_t1 = hit_1 && proc_1 && m1.may_freeze && !t2_freeze_clause;
+        const bool frz_t2 = hit_2 && proc_2 && m2.may_freeze && !t1_freeze_clause && !flinch_t1;
         const bool brn_t1 = hit_1 && proc_1 && m1.may_burn;
         const bool brn_t2 = hit_2 && proc_2 && m2.may_burn && !flinch_t1;
         // TODO add logic for skipping t2 - does flinch cause burn damage to be skipped? lol
@@ -539,6 +546,8 @@ mpq_class q_value(
                     child = State{
                         t1_hp - (t2_dmg_dealt + t1_brn_taken),
                         t2_hp - (t1_dmg_dealt + t2_brn_taken),
+                        state.freeze_clause_1,
+                        state.freeze_clause_2,
                         t1_already_burned || brn_t2,
                         t2_already_burned || brn_t1,
                         hit_1 && m1.must_recharge,
@@ -549,6 +558,8 @@ mpq_class q_value(
                     child = State{
                         t2_hp - (t1_dmg_dealt + t2_brn_taken),
                         t1_hp - (t2_dmg_dealt + t1_brn_taken),
+                        state.freeze_clause_1,
+                        state.freeze_clause_2,
                         t2_already_burned || brn_t1,
                         t1_already_burned || brn_t2,
                         hit_2 && m2.must_recharge,
@@ -727,89 +738,97 @@ void total_solve(
     {
         for (int hp_2 = 1; hp_2 <= hp_1; ++hp_2)
         {
-
             std::cout << "HP: " << hp_1 << ' ' << hp_2 << std::endl;
 
-            for (int burned_1 = 0; burned_1 < 1; ++burned_1)
+            for (int freeze_clause_1 = 0; freeze_clause_1 < 2; ++freeze_clause_1)
             {
-                for (int burned_2 = 0; burned_2 < 1; ++burned_2)
+                for (int freeze_clause_2 = 0; freeze_clause_2 < 2; ++freeze_clause_2)
                 {
-                    // Solve
-
-                    const State state_00{hp_1, hp_2, burned_1, burned_2, false, false};
-                    const State state_01{hp_1, hp_2, burned_1, burned_2, true, false};
-                    const State state_10{hp_1, hp_2, burned_1, burned_2, false, true};
-
-                    solve_state(tables, state_00);
-                    solve_state(tables, state_01);
-                    solve_state(tables, state_10);
-
-                    SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][burned_1][burned_2];
-
-                    // assert
-
-                    // Not relevent if the movesets are not the same
-
-                    // if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
-                    // {
-                    //     if ((entries[0].value != mpq_class{1, 2}))
-                    //     {
-                    //         // std::cout << "s00 not 1/2 for same hp" << std::endl;
-                    //         // assert(false);
-                    //         // exit(1);
-                    //     }
-                    //     if (entries[1].value + entries[2].value != mpq_class{1})
-                    //     {
-                    //         std::cout << "s01 doesnt mirror s10" << std::endl;
-                    //         assert(false);
-                    //         exit(1);
-                    //     }
-                    // }
-
-                    // file output
-
-                    for (int r = 0; r < 3; ++r)
+                    for (int burned_1 = 0; burned_1 < 1; ++burned_1)
                     {
-                        const State state{hp_1, hp_2, burned_1, burned_2, r % 2, r / 2};
-                        BUFFER
-                            << "HP: " << state.hp_1 << ' ' << state.hp_2
-                            << " BURN: " << state.burned_1 << ' ' << state.burned_2
-                            << " RECHARGE: " << state.recharge_1 << ' ' << state.recharge_2 << std::endl;
-                        BUFFER << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
-                        BUFFER << "PAYOFF MATRIX:" << std::endl;
+                        for (int burned_2 = 0; burned_2 < 1; ++burned_2)
+                        {
+                            // Solve
 
-                        // always adds the full 4x4, hopefully the initialized mpq_class values are just 0...
-                        for (int row_idx = 0; row_idx < 4; ++row_idx)
-                        {
-                            for (int col_idx = 0; col_idx < 4; ++col_idx)
-                            {
-                                BUFFER << entries[r].payoff_matrix[row_idx][col_idx] << ' ';
-                            }
-                            BUFFER << std::endl;
-                        }
+                            const State state_00{hp_1, hp_2, freeze_clause_1, freeze_clause_2, burned_1, burned_2, false, false};
+                            const State state_01{hp_1, hp_2, freeze_clause_1, freeze_clause_2, burned_1, burned_2, true, false};
+                            const State state_10{hp_1, hp_2, freeze_clause_1, freeze_clause_2, burned_1, burned_2, false, true};
 
-                        BUFFER << "STRATEGIES:" << std::endl;
-                        if (r % 2 == 0)
-                        {
-                            BUFFER << "P1: ";
-                            for (int i = 0; i < P1_MOVES.size() - 1; ++i)
+                            solve_state(tables, state_00);
+                            solve_state(tables, state_01);
+                            solve_state(tables, state_10);
+
+                            SolutionEntry *entries = tables.data[hp_1 - 1][hp_2 - 1][freeze_clause_1][freeze_clause_2][burned_1][burned_2];
+
+                            // assert
+
+                            // Not relevent if the movesets are not the same
+
+                            // if ((hp_1 == hp_2) && (burned_1 == 0) && (burned_2 == 0))
+                            // {
+                            //     if ((entries[0].value != mpq_class{1, 2}))
+                            //     {
+                            //         // std::cout << "s00 not 1/2 for same hp" << std::endl;
+                            //         // assert(false);
+                            //         // exit(1);
+                            //     }
+                            //     if (entries[1].value + entries[2].value != mpq_class{1})
+                            //     {
+                            //         std::cout << "s01 doesnt mirror s10" << std::endl;
+                            //         assert(false);
+                            //         exit(1);
+                            //     }
+                            // }
+
+                            // file output
+
+                            for (int r = 0; r < 3; ++r)
                             {
-                                BUFFER << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                                const int recharge_1 = r % 2;
+                                const int recharge_2 = r / 2;
+
+                                BUFFER
+                                    << "HP: " << hp_1 << ' ' << hp_2
+                                    << " FRZ CLAUSE: " << freeze_clause_1 << ' ' << freeze_clause_2
+                                    << " BRN: " << burned_1 << ' ' << burned_2
+                                    << " RECHARGE: " << recharge_1 << ' ' << recharge_2 << std::endl;
+                                BUFFER << "VALUE: " << entries[r].value.get_d() << " = " << entries[r].value.get_str() << std::endl;
+                                BUFFER << "PAYOFF MATRIX:" << std::endl;
+
+                                // always adds the full 4x4, hopefully the initialized mpq_class values are just 0...
+                                for (int row_idx = 0; row_idx < 4; ++row_idx)
+                                {
+                                    for (int col_idx = 0; col_idx < 4; ++col_idx)
+                                    {
+                                        BUFFER << entries[r].payoff_matrix[row_idx][col_idx] << ' ';
+                                    }
+                                    BUFFER << std::endl;
+                                }
+
+                                BUFFER << "STRATEGIES:" << std::endl;
+                                if (recharge_1 == 0)
+                                {
+                                    BUFFER << "P1: ";
+                                    for (int i = 0; i < P1_MOVES.size() - 1; ++i)
+                                    {
+                                        BUFFER << P1_MOVES[i]->id << " : " << entries[r].p1_strategy[i] << ", ";
+                                    }
+                                    BUFFER << std::endl;
+                                }
+                                if (recharge_2 == 0)
+                                {
+                                    BUFFER << "P2: ";
+                                    for (int i = 0; i < P2_MOVES.size() - 1; ++i)
+                                    {
+                                        BUFFER << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
+                                    }
+                                    BUFFER << std::endl;
+                                }
                             }
-                            BUFFER << std::endl;
-                        }
-                        if (r / 2 == 0)
-                        {
-                            BUFFER << "P2: ";
-                            for (int i = 0; i < P2_MOVES.size() - 1; ++i)
-                            {
-                                BUFFER << P2_MOVES[i]->id << " : " << entries[r].p2_strategy[i] << ", ";
-                            }
-                            BUFFER << std::endl;
+
+                            // end hp, burn loop
                         }
                     }
-
-                    // end hp, burn loop
                 }
             }
         }
