@@ -17,7 +17,7 @@ Checklist:
 
 */
 
-std::ofstream OUTPUT_FILE{"standard.txt", std::ios::out | std::ios::trunc};
+std::ofstream OUTPUT_FILE{"fire-blast-vs-standard.txt", std::ios::out | std::ios::trunc};
 
 std::ostringstream BUFFER;
 
@@ -167,7 +167,7 @@ const std::vector<const Move *> P1_MOVES{
     &BODY_SLAM,
     &HYPER_BEAM,
     &BLIZZARD,
-    // &STOMP,
+    &FIRE_BLAST,
     &RECHARGE};
 
 const std::vector<const Move *> P2_MOVES{
@@ -746,7 +746,7 @@ void total_solve(
                 {
                     for (int burned_1 = 0; burned_1 < 1; ++burned_1)
                     {
-                        for (int burned_2 = 0; burned_2 < 1; ++burned_2)
+                        for (int burned_2 = 0; burned_2 < 2; ++burned_2)
                         {
                             // Solve
 
