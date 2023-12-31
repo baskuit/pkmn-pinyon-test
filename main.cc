@@ -120,10 +120,41 @@ void mapped_state_test(
     stats.data_matrix.print();
 }
 
+void print_durations(uint8_t *data)
+{
+    std::cout << "sleep: " << (int)((data[0] >> 0) & 7) << std::endl;
+    std::cout << "confusion: " << (int)((data[0] >> 3) & 7) << std::endl;
+    int x = (int)((data[0] >> 6) & 3) + (int)((data[1] >> 0) & 3) * 4;
+    std::cout << "disable: " << x << std::endl;
+    std::cout << "attacking: " << (int)((data[1] >> 2) & 7) << std::endl;
+    std::cout << "binding: " << (int)((data[1] >> 5) & 7) << std::endl;
+}
+
+void print_chance_action(
+    uint8_t *data)
+{
+    std::cout << "damage: " << (int)((data[0] >> 0)) << std::endl;
+    std::cout << "hit: " << (int)((data[1] >> 0) & 3) << std::endl;
+    std::cout << "crit: " << (int)((data[1] >> 2) & 3) << std::endl;
+    std::cout << "proc: " << (int)((data[1] >> 4) & 3) << std::endl;
+    std::cout << "tie: " << (int)((data[1] >> 6) & 3) << std::endl;
+    std::cout << "confused: " << (int)((data[2] >> 0) & 3) << std::endl;
+    std::cout << "full para: " << (int)((data[2] >> 2) & 3) << std::endl;
+    std::cout << "duration: " << (int)((data[2] >> 4) & 15) << std::endl;
+    print_durations(data + 3);
+    std::cout << "move slot: " << (int)((data[5] >> 0) & 15) << std::endl;
+    std::cout << "multihit: " << (int)((data[5] >> 4) & 15) << std::endl;
+    std::cout << "psywave: " << (int)((data[6] >> 0)) << std::endl;
+    std::cout << "metronome: " << (int)((data[7] >> 0)) << std::endl;
+    // std::vector<std::string> fields = {"damage", "hit", "crit", "proc", "tie", "self-hit", "full para", "duration", "sleep dur.", "con. dur.", "disable dur.", "atk dur.", "trap dur."} 
+}
+
 int main(int argc, char **argv)
 {
 
-    BattleTypes::State state{1, 1};
+    BattleTypes::State state{0, 0};
+    BattleTypes::PRNG device{};
+    state.randomize_transition(device);
     // use full rolls instead of default
     state.clamp = false;
     // get past trivial switch-in state
@@ -131,32 +162,47 @@ int main(int argc, char **argv)
         state.row_actions[0], state.col_actions[0]);
     state.get_actions();
 
-    using Exp3Model = SearchModel<
-        TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>>;
+    state.apply_actions(
+        state.row_actions[0], state.col_actions[0]);
+    state.get_actions();
 
-    Exp3Model::PRNG device{0};
+    std::array<uint8_t, 16> obs = state.get_obs().get();
 
-    Exp3Model::Model exp3_model{
-        1 << 12, device, {0}, {}};
+    for (const uint8_t x : obs)
+    {
+        std::cout << (int)x << ", ";
+    }
+    std::cout << std::endl;
 
-    using AlphaBetaModel = MappedAlphaBetaModel<Exp3Model>;
+    print_chance_action(obs.data());
+    print_chance_action(obs.data() + 8);
 
-    AlphaBetaModel::Model mapped_alpha_beta_model{
-        1, 1 << 20, device, exp3_model};
+    // using Exp3Model = SearchModel<
+    //     TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>>;
 
-    using Types = FullTraversal<EmptyModel<MappedState<AlphaBetaModel>>>;
+    // Exp3Model::PRNG device{0};
 
-    Types::State root_state{1, 1 << 20, device, state, mapped_alpha_beta_model};
-    Types::Model model{};
-    Types::Search search{};
-    Types::MatrixNode node{};
-    search.run(1, device, root_state, model, node, 6);
+    // Exp3Model::Model exp3_model{
+    //     1 << 12, device, {0}, {}};
 
-    std::cout << "VALUE:" << std::endl;
-    std::cout << node.stats.payoff.get_row_value() << std::endl;
-    std::cout << "STRATEGIES:" << std::endl;
-    math::print(node.stats.row_solution);
-    math::print(node.stats.col_solution);
-    std::cout << "PAYOFF MATRIX:" << std::endl;
-    node.stats.nash_payoff_matrix.print();
+    // using AlphaBetaModel = MappedAlphaBetaModel<Exp3Model>;
+
+    // AlphaBetaModel::Model mapped_alpha_beta_model{
+    //     1, 1 << 20, device, exp3_model};
+
+    // using Types = FullTraversal<EmptyModel<MappedState<AlphaBetaModel>>>;
+
+    // Types::State root_state{1, 1 << 20, device, state, mapped_alpha_beta_model};
+    // Types::Model model{};
+    // Types::Search search{};
+    // Types::MatrixNode node{};
+    // search.run(1, device, root_state, model, node, 6);
+
+    // std::cout << "VALUE:" << std::endl;
+    // std::cout << node.stats.payoff.get_row_value() << std::endl;
+    // std::cout << "STRATEGIES:" << std::endl;
+    // math::print(node.stats.row_solution);
+    // math::print(node.stats.col_solution);
+    // std::cout << "PAYOFF MATRIX:" << std::endl;
+    // node.stats.nash_payoff_matrix.print();
 }
