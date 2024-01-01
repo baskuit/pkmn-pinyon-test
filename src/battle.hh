@@ -16,6 +16,11 @@ using TypeList = DefaultTypes<
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
 
+void get_bench_data(uint8_t *data, int *output)
+{
+    output[i]
+}
+
 struct BattleTypes : TypeList
 {
 
@@ -99,6 +104,16 @@ struct BattleTypes : TypeList
         //     // }
         // }
 
+        template <typename T>
+        void put_status(T *x) {
+            for (int i = 0; i < 2; ++i) {
+                for (int p = 0; p < 6; ++p) {
+                    int index = 184 * i + 24 * p + 20;
+                    x[i * 6 + p] = static_cast<T>(battle.bytes[index]);
+                }
+            }
+        }
+
         void get_actions()
         {
             this->row_actions.resize(
@@ -141,43 +156,44 @@ struct BattleTypes : TypeList
             TypeList::Action row_action,
             TypeList::Action col_action)
         {
+            clamp = false;
             if (clamp)
             {
-                calc_options.overrides.bytes[0] = 217 + 2 * (battle.bytes[383] % 20);
-                calc_options.overrides.bytes[8] = 217 + 2 * (battle.bytes[382] % 20);
+                calc_options.overrides.bytes[0] = 217 + 19 * (battle.bytes[383] % 3);
+                calc_options.overrides.bytes[8] = 217 + 19 * (battle.bytes[382] % 3);
             }
 
-            pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
+            pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
             result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
 
             auto *p = pkmn_gen1_battle_options_chance_probability(&options);
             this->prob = typename TypeList::Prob{static_cast<float>(
                 pkmn_rational_numerator(p) / pkmn_rational_denominator(p))};
 
+            auto ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
+            memcpy(this->obs.get().data(), ptr, 16);
+
             if (clamp)
             {
-                std::cout << "clamp hit check: " << std::endl;
+                // std::cout << "clamp hit check: " << std::endl;
 
-                auto ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
                 const Obs &obs_ref = *reinterpret_cast<std::array<uint8_t, 16> *>(ptr);
 
-                for (int i = 0; i < 16; ++i)
-                {
-                    std::cout << (int)obs_ref.get()[i] << ' ';
-                }
-                std::cout << std::endl;
+                // for (int i = 0; i < 16; ++i)
+                // {
+                //     std::cout << (int)obs_ref.get()[i] << ' ';
+                // }
+                // std::cout << std::endl;
 
-                if ((obs_ref.get()[1] & 2) != uint8_t{0})
+                if (obs_ref.get()[1] & 2 && obs_ref.get()[0])
                 {
-                    std::cout << "roll 1 detected" << std::endl;
                     this->prob *= static_cast<typename TypeList::Prob>(
-                        typename TypeList::Q{39, 20});
+                        typename TypeList::Q{13, 1});
                 }
-                if ((obs_ref.get()[9] & 2) != uint8_t{0})
+                if (obs_ref.get()[9] & 2 && obs_ref.get()[8])
                 {
-                    std::cout << "roll 2 detected" << std::endl;
                     this->prob *= static_cast<typename TypeList::Prob>(
-                        typename TypeList::Q{39, 20});
+                        typename TypeList::Q{13, 1});
                 }
             }
 
@@ -222,12 +238,13 @@ struct BattleTypes : TypeList
             debug_log.push_back(static_cast<uint8_t>(col_action));
         }
 
-        const Obs &get_obs() const
-        {
-            auto ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
-            const Obs &obs_ref = *reinterpret_cast<std::array<uint8_t, 16> *>(ptr);
-            return obs_ref;
-        }
+        // const Obs &get_obs() const
+        // {
+        //     auto *ptr = pkmn_gen1_battle_options_chance_actions(&options)->bytes;
+        //     const Obs &obs_ref = *reinterpret_cast<std::array<uint8_t, 16> *>(ptr);
+        //     BattleTypes::Obs obs = obs_ref;
+        //     return obs;
+        // }
 
         void randomize_transition(TypeList::PRNG &device)
         {

@@ -1,181 +1,167 @@
 #include "./src/battle.hh"
 #include "./src/mapped-state-alpha-beta.hh"
+#include "./src/print.hh"
 
-void save_debug_bytes(
-    const BattleTypes::State &state)
+struct Branch
 {
-    std::string path = "/home/user/Desktop/pkmn-pinyon-test/stream.txt";
-    remove(path.data());
-    std::fstream file;
-    file.open(path, std::ios::binary | std::ios::app);
-    const size_t n = state.debug_log.size();
-    file.write(reinterpret_cast<const char *>(state.debug_log.data()), n);
-    file.close();
-}
-
-struct ArrayHash
-{
-    template <typename T, std::size_t N>
-    std::size_t operator()(const std::array<T, N> &arr) const
-    {
-        std::size_t hash_value = 0;
-        for (const auto &element : arr)
-        {
-            hash_value ^= std::hash<T>{}(element) + 0x9e3779b9 + (hash_value << 6) + (hash_value >> 2);
-        }
-        return hash_value;
-    }
+    BattleTypes::Prob prob;
+    BattleTypes::Seed seed;
+    BattleTypes::Obs obs;
 };
 
-// print number of observed chance branches
-void count_branches(
-    const BattleTypes::State &state)
+void try_force(
+    BattleTypes::PRNG &device,
+    const BattleTypes::State &state,
+    BattleTypes::Action row_a, BattleTypes::Action col_a,
+    std::unordered_map<size_t, Branch> &branches,
+    BattleTypes::Prob &unexplored,
+    const size_t tries)
 {
-    const size_t tries = 1 << 15;
-    BattleTypes::PRNG device{0};
+    const static BattleTypes::Prob eps = .0000001;
+    const static BattleTypes::Prob neps = -.0000001;
 
-    const size_t rows = state.row_actions.size();
-    const size_t cols = state.col_actions.size();
-
-    std::cout << rows << ' ' << cols << std::endl;
-
-    typename BattleTypes::MatrixInt counts{rows, cols};
-
-    for (int row_idx = 0; row_idx < rows; ++row_idx)
+    BattleTypes::ObsHash hasher{};
+    size_t t = 0;
+    while (unexplored.get() > -1000 && (t < tries))
     {
-        for (int col_idx = 0; col_idx < cols; ++col_idx)
+        size_t seed = device.uniform_64();
+        auto state_ = state;
+        state_.randomize_transition(seed);
+        state_.apply_actions(row_a, col_a);
+        BattleTypes::Obs obs = state_.get_obs();
+        // print_chance_actions(obs.get().data());
+        const size_t transition_hash = hasher(obs);
+        if (branches.find(transition_hash) == branches.end())
         {
-            const auto row_action = state.row_actions[row_idx];
-            const auto col_action = state.col_actions[col_idx];
+            unexplored -= state_.prob;
+            branches[transition_hash] = {state_.prob, seed, obs};
+        }
+        else
+        {
+            const Branch &branch = branches.at(transition_hash);
+            const BattleTypes::Obs obs_ = branch.obs;
 
-            std::unordered_map<std::array<uint8_t, 376>, int, ArrayHash> hash_map;
-
-            for (int i = 0; i < tries; ++i)
+            if (obs != obs_)
             {
-                auto state_ = state;
-                state_.randomize_transition(device);
-                state_.apply_actions(row_action, col_action);
-
-                std::array<uint8_t, 376> fast;
-                memcpy(fast.data(), state_.battle.bytes, 376);
-                int &count = hash_map[fast];
-                ++count;
+                for (int i = 0; i < 16; ++i)
+                {
+                    std::cout << (int)obs.get()[i] << ' ';
+                }
+                std::cout << std::endl;
+                for (int i = 0; i < 16; ++i)
+                {
+                    std::cout << (int)obs_.get()[i] << ' ';
+                }
+                std::cout << std::endl;
+                std::cout << transition_hash << std::endl;
+                assert(false);
             }
 
-            counts.get(row_idx, col_idx) = hash_map.size();
+            // if (unexplored < -.001)
+            // {
+            //     assert(false);
+            // }
+
+            ++t;
         }
     }
-
-    counts.print();
 }
 
-void mapped_state_test(
-    BattleTypes::State &state)
+void test_prob()
 {
-    // performing efficient alpha beta on each lvl 1 matrix node
+    BattleTypes::PRNG device{0};
+    for (int i = 0; i < 10000; ++i)
+    {
 
-    using Types = TreeBanditThreaded<Exp3<MonteCarloModel<BattleTypes>>>;
-    using T = SearchModel<Types, false>;
+        int r, c;
+        r = device.random_int(20) + 2;
+        c = device.random_int(20) + 2;
 
-    const size_t iterations = 1 << 20;
-    Types::PRNG device{0};
-    T::Model model{iterations, device, {0}, {{.1}, 4}};
+        std::cout << "Teams: " << r << ' ' << c << std::endl;
 
-    using AB = AlphaBeta<EmptyModel<MappedState<T>>>;
-    // expands state up to depth 2 and call search.run_for_iterations for get_payoff
-    AB::State ab_state{
-        2,       // depth
-        1 << 23, // tries
-        device,
-        state,
-        model};
+        BattleTypes::State state{r, c};
+        state.clamp = false;
 
-    // const size_t n = ab_state.explored_tree->child->stats.count;
-    // for (const auto branch : ab_state.explored_tree->child->stats.branches) {
-    //     const float p = (float)branch.second.count / n;
-    //     const float ratio = p / static_cast<float>(branch.second.prob);
-    //     const int x = std::log(ratio) / std::log(19.5) + .01;
-    //     std::cout << (float)branch.second.count / n * 1000 << " ~ " <<  branch.second.prob * 1000 * std::pow(19.5, x) << "; ";
-    // }
+        while (!state.is_terminal())
+        {
+            state.get_actions();
+            const size_t rows = state.row_actions.size();
+            const size_t cols = state.col_actions.size();
+            r = device.random_int(rows);
+            c = device.random_int(cols);
 
-    // return;
+            std::unordered_map<size_t, Branch> branches{};
+            BattleTypes::Prob unexplored{1};
+            try_force(
+                device,
+                state,
+                state.row_actions[r], state.col_actions[c],
+                branches, unexplored, 1 << 10);
 
-    std::cout << "TOTAL: " << ab_state.node->count_matrix_nodes() << std::endl;
+            std::cout << "unexplored: " << unexplored.get() << std::endl;
 
-    AB::Search ab_solver{};
-    AB::Model ab_model{};
-    AB::MatrixNode ab_root{};
+            state.apply_actions(
+                state.row_actions[r],
+                state.col_actions[c]);
+            if (unexplored.get() < -.4)
+            {
+                std::cout << "holy" << std::endl;
+                state.save_debug_log("out.txt");
+                std::cout << r << ' ' << c << std::endl;
 
-    // solves until terminal, which is up to the depth set above
-    ab_solver.run(2, device, ab_state, ab_model, ab_root);
-    std::cout << "SEARCHED: " << ab_root.count_matrix_nodes() << std::endl;
+                int status[12];
+                state.put_status<int>(status);
+                std::cout << "Status:" << std::endl;
+                for (int s = 0; s < 12; ++s)
+                {
+                    std::cout << status[s] << ' ';
+                }
+                std::cout << std::endl;
 
-    AB::MatrixStats &stats = ab_root.stats;
-
-    math::print(stats.I);
-    math::print(stats.row_solution);
-    math::print(stats.J);
-    math::print(stats.col_solution);
-    std::cout << stats.row_solution.size() << ' ' << stats.col_solution.size() << std::endl;
-    stats.data_matrix.print();
-}
-
-void print_durations(uint8_t *data)
-{
-    std::cout << "sleep: " << (int)((data[0] >> 0) & 7) << std::endl;
-    std::cout << "confusion: " << (int)((data[0] >> 3) & 7) << std::endl;
-    int x = (int)((data[0] >> 6) & 3) + (int)((data[1] >> 0) & 3) * 4;
-    std::cout << "disable: " << x << std::endl;
-    std::cout << "attacking: " << (int)((data[1] >> 2) & 7) << std::endl;
-    std::cout << "binding: " << (int)((data[1] >> 5) & 7) << std::endl;
-}
-
-void print_chance_action(
-    uint8_t *data)
-{
-    std::cout << "damage: " << (int)((data[0] >> 0)) << std::endl;
-    std::cout << "hit: " << (int)((data[1] >> 0) & 3) << std::endl;
-    std::cout << "crit: " << (int)((data[1] >> 2) & 3) << std::endl;
-    std::cout << "proc: " << (int)((data[1] >> 4) & 3) << std::endl;
-    std::cout << "tie: " << (int)((data[1] >> 6) & 3) << std::endl;
-    std::cout << "confused: " << (int)((data[2] >> 0) & 3) << std::endl;
-    std::cout << "full para: " << (int)((data[2] >> 2) & 3) << std::endl;
-    std::cout << "duration: " << (int)((data[2] >> 4) & 15) << std::endl;
-    print_durations(data + 3);
-    std::cout << "move slot: " << (int)((data[5] >> 0) & 15) << std::endl;
-    std::cout << "multihit: " << (int)((data[5] >> 4) & 15) << std::endl;
-    std::cout << "psywave: " << (int)((data[6] >> 0)) << std::endl;
-    std::cout << "metronome: " << (int)((data[7] >> 0)) << std::endl;
-    // std::vector<std::string> fields = {"damage", "hit", "crit", "proc", "tie", "self-hit", "full para", "duration", "sleep dur.", "con. dur.", "disable dur.", "atk dur.", "trap dur."} 
+                for (auto pair : branches)
+                {
+                    for (int i = 0; i < 16; ++i)
+                    {
+                        std::cout << (int)pair.second.obs.get()[i] << ' ';
+                    }
+                    std::cout << std::endl;
+                    print_chance_actions(pair.second.obs.get().data());
+                    std::cout << pair.second.prob.get() << std::endl;
+                }
+                exit(1);
+            }
+        }
+    }
 }
 
 int main(int argc, char **argv)
 {
+    test_prob();
+    // BattleTypes::State state{0, 0};
+    // BattleTypes::PRNG device{};
+    // state.randomize_transition(device.uniform_64());
+    // // use full rolls instead of default
+    // state.clamp = false;
+    // // get past trivial switch-in state
+    // state.apply_actions(
+    //     state.row_actions[0], state.col_actions[0]);
+    // state.get_actions();
 
-    BattleTypes::State state{0, 0};
-    BattleTypes::PRNG device{};
-    state.randomize_transition(device);
-    // use full rolls instead of default
-    state.clamp = false;
-    // get past trivial switch-in state
-    state.apply_actions(
-        state.row_actions[0], state.col_actions[0]);
-    state.get_actions();
+    // state.apply_actions(
+    //     state.row_actions[0], state.col_actions[0]);
+    // state.get_actions();
 
-    state.apply_actions(
-        state.row_actions[0], state.col_actions[0]);
-    state.get_actions();
+    // std::array<uint8_t, 16> obs = state.get_obs().get();
 
-    std::array<uint8_t, 16> obs = state.get_obs().get();
+    // for (const uint8_t x : obs)
+    // {
+    //     std::cout << (int)x << ", ";
+    // }
+    // std::cout << std::endl;
 
-    for (const uint8_t x : obs)
-    {
-        std::cout << (int)x << ", ";
-    }
-    std::cout << std::endl;
-
-    print_chance_action(obs.data());
-    print_chance_action(obs.data() + 8);
+    // print_chance_actions(obs.data());
+    // print_chance_action(obs.data());
+    // print_chance_action(obs.data() + 8);
 
     // using Exp3Model = SearchModel<
     //     TreeBandit<Exp3<MonteCarloModel<BattleTypes>>>>;
@@ -198,11 +184,11 @@ int main(int argc, char **argv)
     // Types::MatrixNode node{};
     // search.run(1, device, root_state, model, node, 6);
 
-    // std::cout << "VALUE:" << std::endl;
+    // std::endl;
     // std::cout << node.stats.payoff.get_row_value() << std::endl;
-    // std::cout << "STRATEGIES:" << std::endl;
+    // std::endl;
     // math::print(node.stats.row_solution);
     // math::print(node.stats.col_solution);
-    // std::cout << "PAYOFF MATRIX:" << std::endl;
+    // std::endl;
     // node.stats.nash_payoff_matrix.print();
 }

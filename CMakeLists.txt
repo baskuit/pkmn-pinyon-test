@@ -12,7 +12,7 @@ set(libpkmn-debug ${PROJECT_SOURCE_DIR}/extern/engine/zig-out/lib/libpkmn-showdo
 
 add_executable(main ./main.cc)
 target_link_libraries(main pinyon)
-target_link_libraries(main ${libpkmn})
+target_link_libraries(main ${libpkmn-debug})
 
 add_executable(example ./example.cc)
 target_link_libraries(example ${libpkmn})
