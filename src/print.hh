@@ -1,8 +1,10 @@
 #pragma once
 
-#include "./battle.hh"
+#include <string>
+#include <vector>
+#include <iostream>
 
-void print_durations(uint8_t *data, int *output)
+void print_durations(const uint8_t *data, int *output)
 {
     output[0] = ((data[0] >> 0) & 7);
     output[1] = ((data[0] >> 3) & 7);
@@ -12,7 +14,7 @@ void print_durations(uint8_t *data, int *output)
 }
 
 void get_chance_actions_output(
-    uint8_t *data, int *output)
+    const uint8_t *data, int *output)
 {
     output[0] = ((data[0] >> 0));
     output[1] = ((data[1] >> 0) & 3);
@@ -36,7 +38,7 @@ std::string format(const int x)
     return out[x];
 }
 
-void print_chance_actions(uint8_t *data)
+void print_chance_actions(const uint8_t *data)
 {
     const static std::vector<std::string> fields = {
         "dmg", "hit", "crit", "proc",
@@ -46,7 +48,7 @@ void print_chance_actions(uint8_t *data)
 
     const static bool type[17] = {
         0, 1, 1, 1,
-        1, 1, 1, 0,
+        0, 1, 1, 0,
         0, 0, 1, 0,
         0, 0, 0, 0, 0};
 
@@ -69,4 +71,19 @@ void print_chance_actions(uint8_t *data)
         }
         std::cout << std::endl;
     }
+}
+
+void print_overrides (const uint8_t *data) {
+    print_chance_actions(data);
+    int duration_ouput[5];
+    print_durations(data + 16, duration_ouput);
+    for (int i = 0; i < 5; ++i) {
+        std::cout << duration_ouput[i] << ", ";
+    }
+    std::cout << std::endl;
+    print_durations(data + 18, duration_ouput);
+    for (int i = 0; i < 5; ++i) {
+        std::cout << duration_ouput[i] << ", ";
+    }
+    std::cout << std::endl;
 }

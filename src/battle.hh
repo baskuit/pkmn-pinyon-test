@@ -16,11 +16,6 @@ using TypeList = DefaultTypes<
     ConstantSum<1, 1>::Value,
     A<9>::Array>;
 
-void get_bench_data(uint8_t *data, int *output)
-{
-    output[i]
-}
-
 struct BattleTypes : TypeList
 {
 
@@ -163,7 +158,7 @@ struct BattleTypes : TypeList
                 calc_options.overrides.bytes[8] = 217 + 19 * (battle.bytes[382] % 3);
             }
 
-            pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
+            pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
             result = pkmn_gen1_battle_update(&battle, row_action.get(), col_action.get(), &options);
 
             auto *p = pkmn_gen1_battle_options_chance_probability(&options);
@@ -252,7 +247,6 @@ struct BattleTypes : TypeList
             *(reinterpret_cast<uint64_t *>(battle_prng_bytes)) = device.uniform_64();
         }
 
-        // used in MappedState ? confirm TODO
         void randomize_transition(const TypeList::Seed seed)
         {
             uint8_t *battle_prng_bytes = battle.bytes + n_bytes_battle;
