@@ -18,9 +18,15 @@ pkmn_choice move(int x) {
    return (x << 2) | 1;
 }
 
+pkmn_choice switch_(int x) {
+   return (x << 2) | 2;
+}
+
 int main()
 {
-   pkmn_choice choices[PKMN_CHOICES_SIZE];
+   pkmn_result result;
+
+   pkmn_choice c1 = 0, c2 = 0;
 
    pkmn_gen1_battle battle = { {
 
@@ -46,37 +52,50 @@ int main()
 
    pkmn_gen1_chance_options chance_options{};
    pkmn_rational_init(&chance_options.probability);
+   float64_t num, den, prob;
 
    pkmn_gen1_calc_options calc_options{};
 
    pkmn_gen1_battle_options options;
    pkmn_gen1_battle_options_set(&options, NULL, &chance_options, NULL);
-
    pkmn_gen1_chance_actions* actions = pkmn_gen1_battle_options_chance_actions(&options);
    pkmn_rational* p = pkmn_gen1_battle_options_chance_probability(&options);
 
+
    print_chance_actions(actions->bytes);
-   printf("PROB: %lf/%lf\n", pkmn_rational_numerator(p), pkmn_rational_denominator(p));
+   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
+   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
 
-   pkmn_result result;
 
-   pkmn_choice c1 = 0, c2 = 0;
 
    result = pkmn_gen1_battle_update(
       &battle, 0, 0, &options
    );
 
+
+   // seed = 4 works for sleep hit + don't insta wake
+   randomize_transition(battle.bytes, 4);
    pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
-
-   // assert fail
-
-   randomize_transition(battle.bytes, 0);
    result = pkmn_gen1_battle_update(
       &battle, move(2), move(1), &options
    );
-   
+
    print_chance_actions(actions->bytes);
-   printf("PROB: %lf/%lf\n", pkmn_rational_numerator(p), pkmn_rational_denominator(p));
+   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
+   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
+
+   calc_options.overrides.bytes[18] = uint8_t{2};
+
+
+   std::cout << "try wake:" << std::endl;
+   pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
+   result = pkmn_gen1_battle_update(
+      &battle, move(1), move(1), &options
+   );
+
+   print_chance_actions(actions->bytes);
+   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
+   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
 
    return 0;
 }
