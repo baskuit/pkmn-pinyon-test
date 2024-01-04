@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <memory.h>
+
 
 #include <pkmn.h>
 
@@ -61,41 +63,49 @@ int main()
    pkmn_gen1_chance_actions* actions = pkmn_gen1_battle_options_chance_actions(&options);
    pkmn_rational* p = pkmn_gen1_battle_options_chance_probability(&options);
 
-
-   print_chance_actions(actions->bytes);
-   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
-   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
-
-
-
+   std::cout << "Pass turn -" << std::endl;
    result = pkmn_gen1_battle_update(
       &battle, 0, 0, &options
    );
+   print_chance_actions(actions->bytes);
+   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
+   printf("PROB: %lf/%lf = %lf\n\n", num, den, prob);
 
 
    // seed = 4 works for sleep hit + don't insta wake
+   std::cout << "P1 hit hypno and P2 stay asleep -" << std::endl;
    randomize_transition(battle.bytes, 4);
    pkmn_gen1_battle_options_set(&options, NULL, NULL, NULL);
    result = pkmn_gen1_battle_update(
-      &battle, move(2), move(1), &options
+      &battle, move(2), move(3), &options
    );
-
+   // actions = pkmn_gen1_battle_options_chance_actions(&options);
+   // p = pkmn_gen1_battle_options_chance_probability(&options);
    print_chance_actions(actions->bytes);
    num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
-   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
+   printf("PROB: %lf/%lf = %lf\n\n", num, den, prob);
 
-   calc_options.overrides.bytes[18] = uint8_t{2};
+   for (int over = 0; over < 8; ++over) {
+      std::cout << "override: " << over << std::endl;
+      calc_options = {};
+      calc_options.overrides.bytes[18] = uint8_t{over};
 
+      pkmn_gen1_battle battle_{};
+      memcpy(battle_.bytes, battle.bytes, PKMN_GEN1_BATTLE_SIZE);
+      pkmn_gen1_battle_options options_{};
+      memcpy(options_.bytes, options.bytes, PKMN_GEN1_BATTLE_OPTIONS_SIZE);
 
-   std::cout << "try wake:" << std::endl;
-   pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
-   result = pkmn_gen1_battle_update(
-      &battle, move(1), move(1), &options
-   );
+      std::cout << "Both Seismic Toss" << std::endl;
+      pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
+      result = pkmn_gen1_battle_update(
+         &battle, move(3), move(3), &options
+      );
 
-   print_chance_actions(actions->bytes);
-   num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
-   printf("PROB: %lf/%lf = %lf\n", num, den, prob);
+      print_chance_actions(actions->bytes);
+      num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
+      printf("PROB: %lf/%lf = %lf\n\n", num, den, prob);
 
+      
+   }
    return 0;
 }
