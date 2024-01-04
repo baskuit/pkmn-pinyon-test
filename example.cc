@@ -58,7 +58,7 @@ int main()
 
    pkmn_gen1_calc_options calc_options{};
 
-   pkmn_gen1_battle_options options;
+   pkmn_gen1_battle_options options{};
    pkmn_gen1_battle_options_set(&options, NULL, &chance_options, NULL);
    pkmn_gen1_chance_actions* actions = pkmn_gen1_battle_options_chance_actions(&options);
    pkmn_rational* p = pkmn_gen1_battle_options_chance_probability(&options);
@@ -89,6 +89,7 @@ int main()
       std::cout << "override: " << over << std::endl;
       calc_options = {};
       calc_options.overrides.bytes[18] = uint8_t{over};
+      // calc_options.overrides.bytes[16] = uint8_t{over};
 
       pkmn_gen1_battle battle_{};
       memcpy(battle_.bytes, battle.bytes, PKMN_GEN1_BATTLE_SIZE);
@@ -96,16 +97,16 @@ int main()
       memcpy(options_.bytes, options.bytes, PKMN_GEN1_BATTLE_OPTIONS_SIZE);
 
       std::cout << "Both Seismic Toss" << std::endl;
-      pkmn_gen1_battle_options_set(&options, NULL, NULL, &calc_options);
+      pkmn_gen1_battle_options_set(&options_, NULL, NULL, &calc_options);
       result = pkmn_gen1_battle_update(
-         &battle, move(3), move(3), &options
+         &battle_, move(3), move(3), &options_
       );
-
+   
+      actions = pkmn_gen1_battle_options_chance_actions(&options_);
+      p = pkmn_gen1_battle_options_chance_probability(&options_);
       print_chance_actions(actions->bytes);
       num = pkmn_rational_numerator(p); den = pkmn_rational_denominator(p); prob = num / den;
-      printf("PROB: %lf/%lf = %lf\n\n", num, den, prob);
-
-      
+      printf("PROB: %lf/%lf = %lf\n\n", num, den, prob);   
    }
    return 0;
 }
