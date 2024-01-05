@@ -64,7 +64,7 @@ void try_force(
         const size_t seed = device.uniform_64();
         auto state_ = state;
 
-        state_.randomize_transition(1596898293987374370);
+        state_.randomize_transition(seed);
         state_.apply_actions(row_a, col_a);
         Types::Obs obs = state_.get_obs();
 
@@ -146,9 +146,22 @@ void prob_test(
             const float u = unexplored.get();
             if (u < -.01 or u > .05)
             {
-                std::cout << "options chance bytes prior to commit:" << std::endl;
-                auto *ptr = pkmn_gen1_battle_options_chance_actions(&state.options);
-                print_chance_actions(ptr->bytes);
+                uint8_t battle[384];
+                uint8_t chance[PKMN_GEN1_CHANCE_ACTIONS_SIZE];
+                uint8_t override[PKMN_GEN1_CALC_OVERRIDES_SIZE];
+
+                std::cout << "byte dump" << std::endl;
+                for (int b = 0; b < PKMN_GEN1_BATTLE_SIZE; ++b) {
+                    std::cout << (int)state.battle.bytes[b] << ", ";
+                }
+                std::cout << std::endl;
+
+                pkmn_gen1_chance_actions *chance_ptr = pkmn_gen1_battle_options_chance_actions(&state.options);
+                for (int b = 0; b < PKMN_GEN1_CHANCE_ACTIONS_SIZE; ++b) {
+                    std::cout << (int)chance_ptr->bytes[b] << ", ";
+                }
+                std::cout << std::endl;
+
 
                 state.apply_actions(
                     state.row_actions[r],
